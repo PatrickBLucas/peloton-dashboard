@@ -42,10 +42,13 @@ export default function OverviewTab({ data }) {
       .map(w => ({ date: format(w.date, 'MMM d'), weight: w.weight }));
   }, [weight]);
 
-  // Projected goal date from linear regression on weight
+  // Projected goal date from linear regression on last 30 days of weight
   const projectedDate = useMemo(() => {
-    const entries = weight.filter(w => w.weight).sort((a, b) => a.date - b.date);
-    if (entries.length < 7) return '--';
+    const cutoff = subDays(new Date(), 30);
+    const entries = weight
+      .filter(w => w.weight && w.date >= cutoff)
+      .sort((a, b) => a.date - b.date);
+    if (entries.length < 5) return 'Not enough recent data';
     const start = entries[0].date;
     const pts = entries.map(e => ({
       x: (e.date - start) / (1000 * 60 * 60 * 24),
@@ -61,6 +64,7 @@ export default function OverviewTab({ data }) {
     if (slope >= 0) return 'Not trending down';
     const daysToGoal = (stats.goalWeight - intercept) / slope;
     const goalDate = new Date(start.getTime() + daysToGoal * 86400000);
+    if (goalDate < new Date()) return 'Recalculating...';
     return format(goalDate, 'MMM d, yyyy');
   }, [weight, stats.goalWeight]);
 

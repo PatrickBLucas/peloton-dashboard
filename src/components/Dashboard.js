@@ -74,16 +74,20 @@ export default function Dashboard({ accessToken, onLogout }) {
   }, [accessToken, goalInput, data]);
 
   const handleSync = useCallback(async (type) => {
-    const fnName = type === 'fitbit' ? 'sync' : 'getStravaActivities';
+    const fnName = type === 'fitbit' ? 'sync' : type === 'strava' ? 'getStravaActivities' : 'sendPDF';
     setSyncing(type);
     setSyncMsg(null);
     try {
       await triggerSync(accessToken, fnName);
-      setSyncMsg({ type: 'success', text: `${type === 'fitbit' ? 'Fitbit' : 'Strava'} sync started. Reloading in 5s...` });
-      setTimeout(() => {
-        loadData();
-        setSyncMsg(null);
-      }, 5000);
+      setSyncMsg({ type: 'success', text: `${type === 'fitbit' ? 'Fitbit' : type === 'strava' ? 'Strava' : '10-8 report'} ${type === '108' ? 'sent!' : 'sync started. Reloading in 5s...'}` });
+      if (type !== '108') {
+        setTimeout(() => {
+          loadData();
+          setSyncMsg(null);
+        }, 5000);
+      } else {
+        setTimeout(() => setSyncMsg(null), 4000);
+      }
     } catch (e) {
       setSyncMsg({ type: 'error', text: `Sync failed: ${e.message}` });
     } finally {
@@ -138,6 +142,13 @@ export default function Dashboard({ accessToken, onLogout }) {
               Goal: {goalWeight} lbs
             </button>
           )}
+          <button
+            className="sync-btn"
+            onClick={() => handleSync('108')}
+            disabled={syncing !== null}
+          >
+            {syncing === '108' ? '...' : '📧 10-8'}
+          </button>
           <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null}>
             {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
           </button>

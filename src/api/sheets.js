@@ -16,7 +16,11 @@ async function fetchRange(accessToken, range) {
 
 function parseDate(val) {
   if (!val) return null;
-  // Sheets returns dates as strings like "2/3/2025" or "2025-02-03"
+  // If it's already a YYYY-MM-DD string, parse without timezone shift
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const [y, m, d] = val.split('-').map(Number);
+    return new Date(y, m - 1, d); // local time, no UTC shift
+  }
   const d = new Date(val);
   return isNaN(d) ? null : d;
 }
@@ -147,19 +151,18 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
     : null;
 
   // Today and yesterday from Fitbit
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+  const yesterdayStr = `${yest.getFullYear()}-${String(yest.getMonth()+1).padStart(2,'0')}-${String(yest.getDate()).padStart(2,'0')}`;
 
-  const todayData = fitbitData.find(d => {
-    const dd = new Date(d.date); dd.setHours(0,0,0,0);
-    return dd.getTime() === today.getTime();
-  });
-  const yesterdayData = fitbitData.find(d => {
-    const dd = new Date(d.date); dd.setHours(0,0,0,0);
-    return dd.getTime() === yesterday.getTime();
-  });
+  const toDateStr = (d) => {
+    const dt = d instanceof Date ? d : new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  };
+
+  const todayData = fitbitData.find(d => toDateStr(d.date) === todayStr);
+  const yesterdayData = fitbitData.find(d => toDateStr(d.date) === yesterdayStr);
 
   const totalMinutes = workouts.reduce((s, w) => s + (w.movingTimeMin || 0), 0);
 

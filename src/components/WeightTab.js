@@ -44,10 +44,14 @@ export default function WeightTab({ data }) {
     }));
   }, [weight, goalWeight]);
 
-  // Projected goal date from regression
+  // Projected goal date from regression on last 30 days
   const projectedDate = useMemo(() => {
-    const entries = weight.filter(w => w.weight).sort((a, b) => a.date - b.date);
-    if (entries.length < 2) return null;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const entries = weight
+      .filter(w => w.weight && w.date >= cutoff)
+      .sort((a, b) => a.date - b.date);
+    if (entries.length < 5) return null;
 
     const startDate = entries[0].date;
     const points = entries.map(e => ({
@@ -61,6 +65,7 @@ export default function WeightTab({ data }) {
     const daysToGoal = (goalWeight - reg.intercept) / reg.slope;
     const goalDate = new Date(startDate);
     goalDate.setDate(goalDate.getDate() + Math.round(daysToGoal));
+    if (goalDate < new Date()) return null;
     return goalDate;
   }, [weight, goalWeight]);
 
