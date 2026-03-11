@@ -1,0 +1,16 @@
+# dependencies
+/node_modules
+
+# production
+/build
+
+# environment (NEVER commit this)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# misc
+npm-debug.log*
+.DS_Store
