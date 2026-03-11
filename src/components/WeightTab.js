@@ -181,22 +181,22 @@ export default function WeightTab({ data }) {
       {/* BMR/TDEE info */}
       {stats.bmr && (
         <div className="chart-card" style={{ marginTop: 16 }}>
-          <div className="chart-title">Metabolic Estimates</div>
+          <div className="chart-title">Metabolic Estimates — Updated with Current Weight (age {stats.age})</div>
           <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>BMR</div>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 36, color: 'var(--text)' }}>{Math.round(stats.bmr).toLocaleString()}</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 36, color: 'var(--text)' }}>{stats.bmr.toLocaleString()}</div>
               <div style={{ fontSize: 11, color: 'var(--text2)' }}>calories at complete rest</div>
             </div>
             <div>
               <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>TDEE (Sedentary)</div>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 36, color: 'var(--accent)' }}>{Math.round(stats.bmr * 1.2).toLocaleString()}</div>
-              <div style={{ fontSize: 11, color: 'var(--text2)' }}>BMR × 1.2 multiplier</div>
+              <div style={{ fontSize: 11, color: 'var(--text2)' }}>BMR × 1.2</div>
             </div>
             <div>
               <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>TDEE (Active)</div>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 36, color: 'var(--blue)' }}>{Math.round(stats.bmr * 1.55).toLocaleString()}</div>
-              <div style={{ fontSize: 11, color: 'var(--text2)' }}>BMR × 1.55 multiplier</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 36, color: 'var(--blue)' }}>{stats.tdee.toLocaleString()}</div>
+              <div style={{ fontSize: 11, color: 'var(--text2)' }}>BMR × 1.55</div>
             </div>
           </div>
         </div>

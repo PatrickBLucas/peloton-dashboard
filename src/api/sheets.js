@@ -44,31 +44,6 @@ export async function fetchWorkouts(accessToken) {
     .filter(w => w.date);
 }
 
-// ── Peloton Log (detailed ride metrics) ─────────────────────────────────────
-export async function fetchPelotonLog(accessToken) {
-  const rows = await fetchRange(accessToken, 'Peloton Log!A2:P1000');
-  return rows
-    .filter(r => r[0])
-    .map(r => ({
-      date: parseDate(r[0]),
-      liveOnDemand: r[1] || '',
-      instructor: r[2] || '',
-      lengthMin: toNum(r[3]),
-      discipline: r[4] || '',
-      type: r[5] || '',
-      title: r[6] || '',
-      totalOutput: toNum(r[8]),
-      avgWatts: toNum(r[9]),
-      avgResistance: toNum(r[10]),
-      avgCadence: toNum(r[11]),
-      avgSpeed: toNum(r[12]),
-      distanceMi: toNum(r[13]),
-      caloriesBurned: toNum(r[14]),
-      avgHeartrate: toNum(r[15]),
-    }))
-    .filter(w => w.date);
-}
-
 // ── Fitbit daily data ────────────────────────────────────────────────────────
 // Row 4 is header, data starts row 5
 // Col indices (0-based): 0=Date, 2=activityCalories, 3=caloriesBMR, 4=caloriesOut,
@@ -113,46 +88,97 @@ export async function fetchWeight(accessToken) {
     .filter(w => w.date && w.weight);
 }
 
-// ── Stats At A Glance (computed values) ──────────────────────────────────────
-export async function fetchStats(accessToken) {
-  const rows = await fetchRange(accessToken, 'Stats At A Glance!A1:H15');
-  // Parse key values by row label
-  const find = (label) => {
-    const row = rows.find(r => r[0] && r[0].toString().toLowerCase().includes(label.toLowerCase()));
-    return row ? { total: toNum(row[1]), max: toNum(row[2]), min: toNum(row[3]), avg: toNum(row[4]) } : null;
-  };
+// ── Goal weight (Weight!D1) ───────────────────────────────────────────────────
+export async function fetchGoalWeight(accessToken) {
+  const rows = await fetchRange(accessToken, 'Weight!D1');
+  const val = toNum(rows?.[0]?.[0]);
+  return val ?? 180;
+}
 
-  // Pull yesterday/today calorie info from cols H/I rows 2-3
-  const yesterdayConsumed = toNum(rows[1]?.[7]);
-  const yesterdayBurned = toNum(rows[1]?.[8]);
-  const todayConsumed = toNum(rows[2]?.[7]);
-  const todayBurned = toNum(rows[2]?.[8]);
+export async function saveGoalWeight(accessToken, goalWeight) {
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent('Weight!D1')}?valueInputOption=RAW`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ values: [[goalWeight]] }),
+  });
+  if (!res.ok) throw new Error(`Failed to save goal weight: ${res.status}`);
+  return await res.json();
+}
 
-  // BMR row 8, Exp Date row 9, Goal Weight row 10, Start row 11
-  const bmr = toNum(rows[7]?.[7]);
-  const expDateRaw = rows[8]?.[7];
-  const goalWeight = toNum(rows[9]?.[1]);
-  const weightLost = toNum(rows[7]?.[1]);
-  const poundsToGo = rows[8] ? rows[8][1] : null;
-  const steps = toNum(rows[4]?.[7]);
-  const rides = toNum(rows[5]?.[7]);
+
+// Mifflin-St Jeor for men: BMR = (10 × kg) + (6.25 × cm) - (5 × age) + 5
+const HEIGHT_CM = 182.88; // 6 feet
+const BIRTHDAY = new Date('1982-08-25');
+const GOAL_WEIGHT = 180; // fallback default
+
+function getAge() {
+  const today = new Date();
+  let age = today.getFullYear() - BIRTHDAY.getFullYear();
+  const m = today.getMonth() - BIRTHDAY.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < BIRTHDAY.getDate())) age--;
+  return age;
+}
+
+function lbsToKg(lbs) { return lbs * 0.453592; }
+
+export function computeStats(weightEntries, fitbitData, workouts, goalWeight = GOAL_WEIGHT) {
+  const latestWeight = weightEntries.filter(w => w.weight).slice(-1)[0];
+  const startWeight = weightEntries.filter(w => w.weight)[0];
+  const currentWeightLbs = latestWeight?.weight ?? null;
+  const age = getAge();
+
+  let bmr = null;
+  let tdee = null;
+  if (currentWeightLbs) {
+    const kg = lbsToKg(currentWeightLbs);
+    bmr = Math.round((10 * kg) + (6.25 * HEIGHT_CM) - (5 * age) + 5);
+    tdee = Math.round(bmr * 1.55); // moderate activity
+  }
+
+  const weightLost = (startWeight && latestWeight)
+    ? Math.round((startWeight.weight - latestWeight.weight) * 10) / 10
+    : null;
+  const poundsToGo = currentWeightLbs
+    ? Math.round((currentWeightLbs - goalWeight) * 10) / 10
+    : null;
+
+  // Today and yesterday from Fitbit
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const todayData = fitbitData.find(d => {
+    const dd = new Date(d.date); dd.setHours(0,0,0,0);
+    return dd.getTime() === today.getTime();
+  });
+  const yesterdayData = fitbitData.find(d => {
+    const dd = new Date(d.date); dd.setHours(0,0,0,0);
+    return dd.getTime() === yesterday.getTime();
+  });
+
+  const totalMinutes = workouts.reduce((s, w) => s + (w.movingTimeMin || 0), 0);
 
   return {
-    caloriesBurned: find('Calories Burned'),
-    distance: find('Total Distance'),
-    totalOutput: find('Total Output'),
-    heartRate: find('Heart Rate'),
-    weightLost: toNum(weightLost),
-    poundsToGo: toNum(poundsToGo),
-    goalWeight,
     bmr,
-    expDate: expDateRaw,
-    steps,
-    rides,
-    yesterdayConsumed,
-    yesterdayBurned,
-    todayConsumed,
-    todayBurned,
+    tdee,
+    age,
+    goalWeight: goalWeight,
+    currentWeight: currentWeightLbs,
+    weightLost,
+    poundsToGo,
+    rides: workouts.length,
+    todayBurned: todayData?.caloriesOut ?? null,
+    todayConsumed: todayData?.caloriesConsumed ?? null,
+    todaySteps: todayData?.steps ?? null,
+    yesterdayBurned: yesterdayData?.caloriesOut ?? null,
+    yesterdayConsumed: yesterdayData?.caloriesConsumed ?? null,
+    yesterdaySteps: yesterdayData?.steps ?? null,
+    totalMinutes,
   };
 }
 
@@ -161,7 +187,7 @@ const SCRIPT_ID = '1dgNJX1OurqvcdZAQm-5B779AnMf4Wr1QPsX9zooThThq_FZ-qwU5ZPZQ';
 const DEPLOYMENT_ID = 'AKfycbzOR3mrCPG5jBUB4MOQz0LXZ_qrnialOk1RB5R7_mfRdYf4ce5ggzNUE2IjvR36fSx0';
 
 export async function triggerSync(accessToken, functionName) {
-  const url = `https://script.googleapis.com/v1/scripts/${SCRIPT_ID}:run`;
+  const url = `https://script.googleapis.com/v1/scripts/${DEPLOYMENT_ID}:run`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {

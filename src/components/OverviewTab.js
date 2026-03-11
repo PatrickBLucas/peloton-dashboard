@@ -18,29 +18,21 @@ function StatCard({ label, value, sub, accent, color }) {
 export default function OverviewTab({ data }) {
   const { stats, fitbit, weight, workouts } = data;
 
-  // Net calories today
   const netToday = stats.todayConsumed && stats.todayBurned
-    ? Math.round(stats.todayConsumed - stats.todayBurned)
-    : null;
+    ? Math.round(stats.todayConsumed - stats.todayBurned) : null;
   const netYesterday = stats.yesterdayConsumed && stats.yesterdayBurned
-    ? Math.round(stats.yesterdayConsumed - stats.yesterdayBurned)
-    : null;
+    ? Math.round(stats.yesterdayConsumed - stats.yesterdayBurned) : null;
 
-  // Last 30 days activity
-  const recentActivity = useMemo(() => {
-    const cutoff = subDays(new Date(), 30);
-    return workouts
-      .filter(w => w.date >= cutoff)
-      .reduce((acc, w) => {
-        const key = format(w.date, 'MMM d');
-        acc[key] = (acc[key] || 0) + (w.movingTimeMin || 0);
-        return acc;
-      }, {});
+  // Last 20 sessions activity chart
+  const activityChart = useMemo(() => {
+    return [...workouts]
+      .sort((a, b) => a.date - b.date)
+      .slice(-20)
+      .map(w => ({
+        date: format(w.date, 'MMM d'),
+        minutes: Math.round(w.movingTimeMin || 0),
+      }));
   }, [workouts]);
-
-  const activityChart = Object.entries(recentActivity)
-    .map(([date, minutes]) => ({ date, minutes: Math.round(minutes) }))
-    .slice(-20);
 
   // Weight trend last 60 days
   const weightChart = useMemo(() => {
@@ -50,23 +42,27 @@ export default function OverviewTab({ data }) {
       .map(w => ({ date: format(w.date, 'MMM d'), weight: w.weight }));
   }, [weight]);
 
-  // Current weight
-  const currentWeight = weight.filter(w => w.weight).slice(-1)[0];
-  const goalWeight = stats.goalWeight;
-  const poundsToGo = currentWeight && goalWeight
-    ? Math.round((currentWeight.weight - goalWeight) * 10) / 10
-    : null;
-
-  // Projected goal date
-  let projDate = '--';
-  if (stats.expDate) {
-    try {
-      const d = typeof stats.expDate === 'number'
-        ? new Date((stats.expDate - 25569) * 86400 * 1000) // Excel serial
-        : new Date(stats.expDate);
-      if (!isNaN(d)) projDate = format(d, 'MMM d, yyyy');
-    } catch {}
-  }
+  // Projected goal date from linear regression on weight
+  const projectedDate = useMemo(() => {
+    const entries = weight.filter(w => w.weight).sort((a, b) => a.date - b.date);
+    if (entries.length < 7) return '--';
+    const start = entries[0].date;
+    const pts = entries.map(e => ({
+      x: (e.date - start) / (1000 * 60 * 60 * 24),
+      y: e.weight,
+    }));
+    const n = pts.length;
+    const sumX = pts.reduce((s, p) => s + p.x, 0);
+    const sumY = pts.reduce((s, p) => s + p.y, 0);
+    const sumXY = pts.reduce((s, p) => s + p.x * p.y, 0);
+    const sumX2 = pts.reduce((s, p) => s + p.x * p.x, 0);
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    if (slope >= 0) return 'Not trending down';
+    const daysToGoal = (stats.goalWeight - intercept) / slope;
+    const goalDate = new Date(start.getTime() + daysToGoal * 86400000);
+    return format(goalDate, 'MMM d, yyyy');
+  }, [weight, stats.goalWeight]);
 
   return (
     <>
@@ -93,9 +89,9 @@ export default function OverviewTab({ data }) {
         <div className="today-cell">
           <div className="today-label">Steps Today</div>
           <div className="today-val neutral">
-            {stats.steps ? Math.round(stats.steps).toLocaleString() : '--'}
+            {stats.todaySteps ? Math.round(stats.todaySteps).toLocaleString() : '--'}
           </div>
-          <div className="today-detail">{stats.rides ? `${stats.rides} total rides logged` : ''}</div>
+          <div className="today-detail">{stats.rides ? `${stats.rides} total activities logged` : ''}</div>
         </div>
       </div>
 
@@ -103,45 +99,45 @@ export default function OverviewTab({ data }) {
       <div className="stat-grid">
         <StatCard
           label="Current Weight"
-          value={currentWeight ? `${currentWeight.weight} lbs` : '--'}
-          sub={`Goal: ${goalWeight} lbs`}
+          value={stats.currentWeight ? `${stats.currentWeight} lbs` : '--'}
+          sub={`Goal: ${stats.goalWeight} lbs`}
           accent
         />
         <StatCard
           label="Pounds to Go"
-          value={poundsToGo !== null ? `${poundsToGo}` : '--'}
+          value={stats.poundsToGo !== null ? `${stats.poundsToGo}` : '--'}
           sub="until goal weight"
-          color={poundsToGo !== null && poundsToGo > 0 ? 'red' : 'green'}
+          color={stats.poundsToGo > 0 ? 'red' : 'green'}
         />
         <StatCard
           label="Weight Lost"
-          value={stats.weightLost ? `${Math.round(stats.weightLost * 10) / 10} lbs` : '--'}
+          value={stats.weightLost ? `${stats.weightLost} lbs` : '--'}
           sub="since start"
           color="green"
         />
         <StatCard
           label="Projected Goal"
-          value={projDate}
+          value={projectedDate}
           sub="based on trend"
         />
         <StatCard
           label="BMR"
-          value={stats.bmr ? Math.round(stats.bmr).toLocaleString() : '--'}
-          sub="cal/day at rest"
+          value={stats.bmr ? stats.bmr.toLocaleString() : '--'}
+          sub={`age ${stats.age}, ${stats.currentWeight} lbs`}
         />
         <StatCard
-          label="Total Rides"
+          label="TDEE"
+          value={stats.tdee ? stats.tdee.toLocaleString() : '--'}
+          sub="moderate activity"
+        />
+        <StatCard
+          label="Total Activities"
           value={stats.rides ?? '--'}
           sub="all time"
         />
         <StatCard
-          label="Total Distance"
-          value={stats.distance?.total ? `${Math.round(stats.distance.total)} mi` : '--'}
-          sub="all time"
-        />
-        <StatCard
-          label="Total Output"
-          value={stats.totalOutput?.total ? `${Math.round(stats.totalOutput.total).toLocaleString()} kJ` : '--'}
+          label="Total Time"
+          value={stats.totalMinutes ? `${Math.floor(stats.totalMinutes / 60)}h` : '--'}
           sub="all time"
         />
       </div>
@@ -155,11 +151,12 @@ export default function OverviewTab({ data }) {
               <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis hide />
               <Tooltip
-                contentStyle={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 4 }}
-                labelStyle={{ color: '#888', fontSize: 11 }}
-                itemStyle={{ color: '#e8ff00' }}
+                contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
+                labelStyle={{ color: 'var(--text2)', fontSize: 11 }}
+                itemStyle={{ color: 'var(--accent)' }}
+                formatter={(v) => [`${v} min`, 'Duration']}
               />
-              <Bar dataKey="minutes" fill="#e8ff00" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="minutes" fill="var(--accent)" radius={[2, 2, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -171,22 +168,19 @@ export default function OverviewTab({ data }) {
               <AreaChart data={weightChart}>
                 <defs>
                   <linearGradient id="wGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#e8ff00" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#e8ff00" stopOpacity={0} />
+                    <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                 <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={40} />
                 <Tooltip
-                  contentStyle={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 4 }}
-                  labelStyle={{ color: '#888', fontSize: 11 }}
-                  itemStyle={{ color: '#e8ff00' }}
+                  contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
+                  labelStyle={{ color: 'var(--text2)', fontSize: 11 }}
+                  itemStyle={{ color: 'var(--accent)' }}
                   formatter={(v) => [`${v} lbs`, 'Weight']}
                 />
-                <Area type="monotone" dataKey="weight" stroke="#e8ff00" strokeWidth={2} fill="url(#wGrad)" dot={false} />
-                {goalWeight && (
-                  <Area type="monotone" dataKey={() => goalWeight} stroke="#00e676" strokeWidth={1} strokeDasharray="4 4" fill="none" dot={false} name="Goal" />
-                )}
+                <Area type="monotone" dataKey="weight" stroke="var(--accent)" strokeWidth={2} fill="url(#wGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (

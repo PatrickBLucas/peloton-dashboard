@@ -1,7 +1,8 @@
 // src/components/Dashboard.js
 import { useState, useEffect, useCallback } from 'react';
 import {
-  fetchWorkouts, fetchPelotonLog, fetchFitbitData, fetchWeight, fetchStats, fetch108, triggerSync
+  fetchWorkouts, fetchFitbitData, fetchWeight, fetch108,
+  triggerSync, computeStats, fetchGoalWeight, saveGoalWeight
 } from '../api/sheets';
 import OverviewTab from './OverviewTab';
 import WorkoutsTab from './WorkoutsTab';
@@ -22,6 +23,10 @@ export default function Dashboard({ accessToken, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
+  const [goalWeight, setGoalWeight] = useState(180);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalInput, setGoalInput] = useState('');
+  const [savingGoal, setSavingGoal] = useState(false);
   const [syncing, setSyncing] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
 
@@ -29,15 +34,16 @@ export default function Dashboard({ accessToken, onLogout }) {
     try {
       setLoading(true);
       setError(null);
-      const [workouts, peloton, fitbit, weight, stats, tracker] = await Promise.all([
+      const [workouts, fitbit, weight, tracker, fetchedGoal] = await Promise.all([
         fetchWorkouts(accessToken),
-        fetchPelotonLog(accessToken),
         fetchFitbitData(accessToken),
         fetchWeight(accessToken),
-        fetchStats(accessToken),
         fetch108(accessToken),
+        fetchGoalWeight(accessToken),
       ]);
-      setData({ workouts, peloton, fitbit, weight, stats, tracker });
+      setGoalWeight(fetchedGoal);
+      const stats = computeStats(weight, fitbit, workouts, fetchedGoal);
+      setData({ workouts, fitbit, weight, stats, tracker });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -46,6 +52,26 @@ export default function Dashboard({ accessToken, onLogout }) {
   }, [accessToken]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSaveGoal = useCallback(async () => {
+    const val = parseFloat(goalInput);
+    if (isNaN(val) || val < 50 || val > 500) return;
+    setSavingGoal(true);
+    try {
+      await saveGoalWeight(accessToken, val);
+      setGoalWeight(val);
+      setEditingGoal(false);
+      // Recompute stats with new goal
+      if (data) {
+        const stats = computeStats(data.weight, data.fitbit, data.workouts, val);
+        setData(d => ({ ...d, stats }));
+      }
+    } catch (e) {
+      setSyncMsg({ type: 'error', text: `Failed to save goal: ${e.message}` });
+    } finally {
+      setSavingGoal(false);
+    }
+  }, [accessToken, goalInput, data]);
 
   const handleSync = useCallback(async (type) => {
     const fnName = type === 'fitbit' ? 'sync' : 'getStravaActivities';
@@ -83,18 +109,39 @@ export default function Dashboard({ accessToken, onLogout }) {
           ))}
         </nav>
         <div className="topbar-right">
-          <button
-            className="sync-btn"
-            onClick={() => handleSync('fitbit')}
-            disabled={syncing !== null}
-          >
+          {editingGoal ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="number"
+                value={goalInput}
+                onChange={e => setGoalInput(e.target.value)}
+                placeholder={goalWeight}
+                style={{
+                  width: 70, padding: '5px 8px', background: 'var(--bg3)',
+                  border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
+                  color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-mono)',
+                }}
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); if (e.key === 'Escape') setEditingGoal(false); }}
+              />
+              <button className="sync-btn" onClick={handleSaveGoal} disabled={savingGoal}>
+                {savingGoal ? '...' : 'Save'}
+              </button>
+              <button className="logout-btn" onClick={() => setEditingGoal(false)}>Cancel</button>
+            </div>
+          ) : (
+            <button
+              className="sync-btn"
+              onClick={() => { setGoalInput(goalWeight.toString()); setEditingGoal(true); }}
+              title="Set goal weight"
+            >
+              Goal: {goalWeight} lbs
+            </button>
+          )}
+          <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null}>
             {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
           </button>
-          <button
-            className="sync-btn"
-            onClick={() => handleSync('strava')}
-            disabled={syncing !== null}
-          >
+          <button className="sync-btn" onClick={() => handleSync('strava')} disabled={syncing !== null}>
             {syncing === 'strava' ? '...' : '⟳ Strava'}
           </button>
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
