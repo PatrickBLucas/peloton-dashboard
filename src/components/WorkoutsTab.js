@@ -1,185 +1,185 @@
 // src/components/WorkoutsTab.js
 import { useState, useMemo } from 'react';
-import { format, subDays } from 'date-fns';
+import { format } from 'date-fns';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line
 } from 'recharts';
 
 export default function WorkoutsTab({ data }) {
-  const { peloton, workouts } = data;
+  const { workouts } = data;
   const [filter, setFilter] = useState('all');
 
-  // Instructor breakdown
-  const instructors = useMemo(() => {
+  // Activity type breakdown
+  const typeBreakdown = useMemo(() => {
     const counts = {};
-    peloton.forEach(w => {
-      if (w.instructor) counts[w.instructor] = (counts[w.instructor] || 0) + 1;
+    workouts.forEach(w => {
+      const t = w.type || 'Other';
+      counts[t] = (counts[t] || 0) + 1;
     });
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8);
-  }, [peloton]);
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  }, [workouts]);
 
-  // Output over time (last 30 rides with output)
-  const outputChart = useMemo(() => {
-    return peloton
-      .filter(w => w.totalOutput)
+  // Duration trend — last 30 activities
+  const durationChart = useMemo(() => {
+    return [...workouts]
+      .sort((a, b) => a.date - b.date)
       .slice(-30)
       .map(w => ({
         date: w.date ? format(w.date, 'MMM d') : '',
-        output: w.totalOutput,
-        calories: w.caloriesBurned,
+        minutes: Math.round(w.movingTimeMin || 0),
+        calories: w.calories || 0,
       }));
-  }, [peloton]);
+  }, [workouts]);
 
-  // Recent workouts list
-  const recentWorkouts = useMemo(() => {
-    const combined = [
-      ...peloton.map(w => ({ ...w, source: 'peloton' })),
-    ].sort((a, b) => (b.date || 0) - (a.date || 0));
+  // Unique activity types for filter
+  const types = useMemo(() => {
+    return [...new Set(workouts.map(w => w.type).filter(Boolean))].sort();
+  }, [workouts]);
 
-    if (filter === 'cycling') return combined.filter(w => w.discipline === 'Cycling');
-    if (filter === 'other') return combined.filter(w => w.discipline !== 'Cycling');
-    return combined;
-  }, [peloton, filter]);
+  const filtered = useMemo(() => {
+    const sorted = [...workouts].sort((a, b) => (b.date || 0) - (a.date || 0));
+    if (filter === 'all') return sorted;
+    return sorted.filter(w => w.type === filter);
+  }, [workouts, filter]);
 
-  const disciplineColor = (d) => {
-    if (!d) return 'pill-other';
-    if (d.toLowerCase().includes('cycl')) return 'pill-ride';
-    if (d.toLowerCase().includes('run')) return 'pill-run';
+  const typeColor = (t) => {
+    if (!t) return 'pill-other';
+    const l = t.toLowerCase();
+    if (l.includes('ride') || l.includes('cycl')) return 'pill-ride';
+    if (l.includes('run')) return 'pill-run';
     return 'pill-other';
   };
+
+  // Summary stats
+  const totalMinutes = workouts.reduce((s, w) => s + (w.movingTimeMin || 0), 0);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const avgMinutes = workouts.length ? Math.round(totalMinutes / workouts.length) : 0;
+  const totalCals = workouts.filter(w => w.calories).reduce((s, w) => s + w.calories, 0);
+  const totalDistMi = workouts.filter(w => w.distanceM).reduce((s, w) => s + w.distanceM / 1609.34, 0);
 
   return (
     <>
       <div className="section-header">
         <span className="section-title">WORKOUTS</span>
-        <span className="section-sub">{peloton.length} rides logged</span>
+        <span className="section-sub">{workouts.length} activities via Strava</span>
       </div>
 
-      {/* Stats row */}
       <div className="stat-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
-          <div className="stat-label">Avg Output</div>
-          <div className="stat-value">
-            {peloton.length ? Math.round(peloton.filter(w => w.totalOutput).reduce((s, w) => s + w.totalOutput, 0) / peloton.filter(w => w.totalOutput).length) : '--'}
-          </div>
-          <div className="stat-sub">kJ per ride</div>
+          <div className="stat-label">Total Activities</div>
+          <div className="stat-value accent">{workouts.length}</div>
+          <div className="stat-sub">all time</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Avg Heart Rate</div>
-          <div className="stat-value">
-            {(() => {
-              const vals = peloton.filter(w => w.avgHeartrate);
-              return vals.length ? Math.round(vals.reduce((s, w) => s + w.avgHeartrate, 0) / vals.length) : '--';
-            })()}
-          </div>
-          <div className="stat-sub">bpm</div>
+          <div className="stat-label">Total Time</div>
+          <div className="stat-value">{totalHours}h</div>
+          <div className="stat-sub">{Math.round(totalMinutes % 60)}m remaining</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Avg Calories</div>
-          <div className="stat-value">
-            {(() => {
-              const vals = peloton.filter(w => w.caloriesBurned);
-              return vals.length ? Math.round(vals.reduce((s, w) => s + w.caloriesBurned, 0) / vals.length) : '--';
-            })()}
-          </div>
-          <div className="stat-sub">per ride</div>
+          <div className="stat-label">Avg Duration</div>
+          <div className="stat-value">{avgMinutes}</div>
+          <div className="stat-sub">minutes per activity</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Avg Cadence</div>
-          <div className="stat-value">
-            {(() => {
-              const vals = peloton.filter(w => w.avgCadence);
-              return vals.length ? Math.round(vals.reduce((s, w) => s + w.avgCadence, 0) / vals.length) : '--';
-            })()}
-          </div>
-          <div className="stat-sub">RPM</div>
+          <div className="stat-label">Total Distance</div>
+          <div className="stat-value">{Math.round(totalDistMi)}</div>
+          <div className="stat-sub">miles all time</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Total Calories</div>
+          <div className="stat-value">{totalCals ? Math.round(totalCals).toLocaleString() : '--'}</div>
+          <div className="stat-sub">all time</div>
         </div>
       </div>
 
       <div className="chart-grid">
-        {/* Output trend */}
         <div className="chart-card">
-          <div className="chart-title">Total Output — Last 30 Rides (kJ)</div>
+          <div className="chart-title">Duration — Last 30 Activities (min)</div>
           <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={outputChart}>
+            <BarChart data={durationChart} barSize={10}>
               <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={36} />
+              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={32} />
               <Tooltip
-                contentStyle={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 4 }}
-                labelStyle={{ color: '#888', fontSize: 11 }}
-                itemStyle={{ color: '#2979ff' }}
+                contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
+                labelStyle={{ color: 'var(--text2)', fontSize: 11 }}
+                itemStyle={{ color: 'var(--accent)' }}
+                formatter={(v) => [`${v} min`, 'Duration']}
               />
-              <Line type="monotone" dataKey="output" stroke="#2979ff" strokeWidth={2} dot={false} />
-            </LineChart>
+              <Bar dataKey="minutes" fill="var(--accent)" radius={[2, 2, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Instructor breakdown */}
         <div className="chart-card">
-          <div className="chart-title">Top Instructors</div>
+          <div className="chart-title">Activity Types</div>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={instructors.map(([name, count]) => ({ name: name.split(' ')[0], count }))} layout="vertical" barSize={10}>
+            <BarChart data={typeBreakdown.map(([name, count]) => ({ name, count }))} layout="vertical" barSize={10}>
               <XAxis type="number" hide />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={80} />
               <Tooltip
-                contentStyle={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 4 }}
-                labelStyle={{ color: '#888', fontSize: 11 }}
-                itemStyle={{ color: '#e8ff00' }}
-                formatter={(v) => [v, 'Rides']}
+                contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
+                labelStyle={{ color: 'var(--text2)', fontSize: 11 }}
+                itemStyle={{ color: 'var(--blue)' }}
+                formatter={(v) => [v, 'Activities']}
               />
-              <Bar dataKey="count" fill="#e8ff00" radius={[0, 2, 2, 0]} />
+              <Bar dataKey="count" fill="var(--blue)" radius={[0, 2, 2, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Filter */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        {['all', 'cycling', 'other'].map(f => (
+      {/* Filter by type */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <button
+          onClick={() => setFilter('all')}
+          className={`nav-btn${filter === 'all' ? ' active' : ''}`}
+        >
+          All
+        </button>
+        {types.map(t => (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className="nav-btn"
-            style={{ textTransform: 'capitalize' }}
+            key={t}
+            onClick={() => setFilter(t)}
+            className={`nav-btn${filter === t ? ' active' : ''}`}
           >
-            {f === 'all' ? 'All' : f === 'cycling' ? 'Cycling' : 'Other'}
+            {t}
           </button>
         ))}
       </div>
 
-      {/* Workout list */}
       <div className="chart-card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="workout-table">
           <thead>
             <tr>
               <th>Date</th>
-              <th>Class</th>
-              <th>Instructor</th>
-              <th>Length</th>
-              <th>Output</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Duration</th>
+              <th>Distance</th>
               <th>Calories</th>
-              <th>Avg HR</th>
-              <th>Cadence</th>
             </tr>
           </thead>
           <tbody>
-            {recentWorkouts.slice(0, 50).map((w, i) => (
+            {filtered.slice(0, 50).map((w, i) => (
               <tr key={i}>
                 <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text2)', fontSize: 12 }}>
                   {w.date ? format(w.date, 'MM/dd/yy') : '--'}
                 </td>
-                <td>
-                  <span className={`pill ${disciplineColor(w.discipline)}`}>{w.discipline || 'Workout'}</span>
-                  <span style={{ marginLeft: 8, color: 'var(--text2)', fontSize: 12 }}>{w.title || ''}</span>
+                <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {w.name || '--'}
                 </td>
-                <td style={{ color: 'var(--text2)' }}>{w.instructor || '--'}</td>
-                <td style={{ fontFamily: 'var(--font-mono)' }}>{w.lengthMin ? `${w.lengthMin}m` : '--'}</td>
-                <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--blue)' }}>{w.totalOutput ?? '--'}</td>
-                <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent2)' }}>{w.caloriesBurned ?? '--'}</td>
-                <td style={{ fontFamily: 'var(--font-mono)' }}>{w.avgHeartrate ? `${Math.round(w.avgHeartrate)}` : '--'}</td>
-                <td style={{ fontFamily: 'var(--font-mono)' }}>{w.avgCadence ?? '--'}</td>
+                <td>
+                  <span className={`pill ${typeColor(w.type)}`}>{w.type || 'Other'}</span>
+                </td>
+                <td style={{ fontFamily: 'var(--font-mono)' }}>
+                  {w.movingTimeMin ? `${Math.round(w.movingTimeMin)}m` : '--'}
+                </td>
+                <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text2)' }}>
+                  {w.distanceM ? `${(w.distanceM / 1609.34).toFixed(2)} mi` : '--'}
+                </td>
+                <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent2)' }}>
+                  {w.calories ? Math.round(w.calories) : '--'}
+                </td>
               </tr>
             ))}
           </tbody>
