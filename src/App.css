@@ -202,6 +202,29 @@ body {
   font-family: var(--font-mono);
 }
 
+.sync-btn {
+  padding: 6px 14px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 12px;
+  font-family: var(--font-body);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 500;
+}
+
+.sync-btn:hover {
+  border-color: var(--accent);
+  background: var(--bg3);
+}
+
+.sync-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .logout-btn {
   padding: 6px 14px;
   background: none;
@@ -216,6 +239,24 @@ body {
 .logout-btn:hover {
   border-color: var(--text2);
   color: var(--text);
+}
+
+.sync-banner {
+  padding: 10px 24px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.sync-banner.success {
+  background: rgba(46, 204, 113, 0.15);
+  color: var(--green);
+  border-bottom: 1px solid rgba(46, 204, 113, 0.2);
+}
+
+.sync-banner.error {
+  background: rgba(255, 71, 87, 0.15);
+  color: var(--red);
+  border-bottom: 1px solid rgba(255, 71, 87, 0.2);
 }
 
 .main-content {

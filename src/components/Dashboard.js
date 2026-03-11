@@ -1,7 +1,7 @@
 // src/components/Dashboard.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  fetchWorkouts, fetchPelotonLog, fetchFitbitData, fetchWeight, fetchStats, fetch108
+  fetchWorkouts, fetchPelotonLog, fetchFitbitData, fetchWeight, fetchStats, fetch108, triggerSync
 } from '../api/sheets';
 import OverviewTab from './OverviewTab';
 import WorkoutsTab from './WorkoutsTab';
@@ -22,29 +22,48 @@ export default function Dashboard({ accessToken, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
+  const [syncing, setSyncing] = useState(null);
+  const [syncMsg, setSyncMsg] = useState(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        setLoading(true);
-        setError(null);
-        const [workouts, peloton, fitbit, weight, stats, tracker] = await Promise.all([
-          fetchWorkouts(accessToken),
-          fetchPelotonLog(accessToken),
-          fetchFitbitData(accessToken),
-          fetchWeight(accessToken),
-          fetchStats(accessToken),
-          fetch108(accessToken),
-        ]);
-        setData({ workouts, peloton, fitbit, weight, stats, tracker });
-      } catch (e) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [workouts, peloton, fitbit, weight, stats, tracker] = await Promise.all([
+        fetchWorkouts(accessToken),
+        fetchPelotonLog(accessToken),
+        fetchFitbitData(accessToken),
+        fetchWeight(accessToken),
+        fetchStats(accessToken),
+        fetch108(accessToken),
+      ]);
+      setData({ workouts, peloton, fitbit, weight, stats, tracker });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
-    load();
   }, [accessToken]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSync = useCallback(async (type) => {
+    const fnName = type === 'fitbit' ? 'sync' : 'getStravaActivities';
+    setSyncing(type);
+    setSyncMsg(null);
+    try {
+      await triggerSync(accessToken, fnName);
+      setSyncMsg({ type: 'success', text: `${type === 'fitbit' ? 'Fitbit' : 'Strava'} sync started. Reloading in 5s...` });
+      setTimeout(() => {
+        loadData();
+        setSyncMsg(null);
+      }, 5000);
+    } catch (e) {
+      setSyncMsg({ type: 'error', text: `Sync failed: ${e.message}` });
+    } finally {
+      setSyncing(null);
+    }
+  }, [accessToken, loadData]);
 
   const syncTime = data ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
 
@@ -64,10 +83,30 @@ export default function Dashboard({ accessToken, onLogout }) {
           ))}
         </nav>
         <div className="topbar-right">
-          {syncTime && <span className="sync-time">synced {syncTime}</span>}
+          <button
+            className="sync-btn"
+            onClick={() => handleSync('fitbit')}
+            disabled={syncing !== null}
+          >
+            {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
+          </button>
+          <button
+            className="sync-btn"
+            onClick={() => handleSync('strava')}
+            disabled={syncing !== null}
+          >
+            {syncing === 'strava' ? '...' : '⟳ Strava'}
+          </button>
+          {syncTime && <span className="sync-time">loaded {syncTime}</span>}
           <button className="logout-btn" onClick={onLogout}>Sign out</button>
         </div>
       </header>
+
+      {syncMsg && (
+        <div className={`sync-banner ${syncMsg.type}`}>
+          {syncMsg.text}
+        </div>
+      )}
 
       <main className="main-content">
         {loading && (
@@ -94,30 +133,6 @@ export default function Dashboard({ accessToken, onLogout }) {
           </>
         )}
       </main>
-
-      {/* Mobile bottom nav */}
-      <nav style={{
-        display: 'none',
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        background: 'var(--bg2)',
-        borderTop: '1px solid var(--border)',
-        padding: '8px 0',
-        zIndex: 100,
-      }} className="mobile-nav">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            className={`nav-btn${tab === t.id ? ' active' : ''}`}
-            onClick={() => setTab(t.id)}
-            style={{ flex: 1, fontSize: 11 }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
     </div>
   );
 }

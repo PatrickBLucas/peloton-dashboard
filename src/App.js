@@ -9,7 +9,7 @@ const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 function LoginScreen({ onLogin }) {
   const login = useGoogleLogin({
     onSuccess: onLogin,
-    scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+    scope: 'https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/script.projects',
   });
 
   return (

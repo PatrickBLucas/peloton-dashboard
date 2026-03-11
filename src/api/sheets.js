@@ -156,6 +156,26 @@ export async function fetchStats(accessToken) {
   };
 }
 
+// ── Apps Script triggers ─────────────────────────────────────────────────────
+const SCRIPT_ID = '1dgNJX1OurqvcdZAQm-5B779AnMf4Wr1QPsX9zooThThq_FZ-qwU5ZPZQ';
+
+export async function triggerSync(accessToken, functionName) {
+  const url = `https://script.googleapis.com/v1/scripts/${SCRIPT_ID}:run`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ function: functionName }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `Script API error: ${res.status}`);
+  }
+  return await res.json();
+}
+
 // ── 10-8 monthly activity (P. Lucas Master) ──────────────────────────────────
 export async function fetch108(accessToken) {
   const rows = await fetchRange(accessToken, 'P. Lucas Master!A5:C40');
