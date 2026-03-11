@@ -158,6 +158,7 @@ export async function fetchStats(accessToken) {
 
 // ── Apps Script triggers ─────────────────────────────────────────────────────
 const SCRIPT_ID = '1dgNJX1OurqvcdZAQm-5B779AnMf4Wr1QPsX9zooThThq_FZ-qwU5ZPZQ';
+const DEPLOYMENT_ID = 'AKfycbzOR3mrCPG5jBUB4MOQz0LXZ_qrnialOk1RB5R7_mfRdYf4ce5ggzNUE2IjvR36fSx0';
 
 export async function triggerSync(accessToken, functionName) {
   const url = `https://script.googleapis.com/v1/scripts/${SCRIPT_ID}:run`;
@@ -167,7 +168,10 @@ export async function triggerSync(accessToken, functionName) {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ function: functionName }),
+    body: JSON.stringify({
+      function: functionName,
+      devMode: false,
+    }),
   });
   if (!res.ok) {
     const err = await res.json();
