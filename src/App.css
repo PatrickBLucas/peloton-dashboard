@@ -193,7 +193,8 @@ body {
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
+  position: relative;
 }
 
 .sync-time {
@@ -223,6 +224,61 @@ body {
 .sync-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Hamburger — hidden on desktop */
+.hamburger-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+}
+
+/* topbar-actions visible inline on desktop */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Bottom nav — hidden on desktop */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  z-index: 100;
+}
+
+.bottom-nav-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 4px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  transition: color 0.15s;
+}
+
+.bottom-nav-btn.active {
+  color: var(--accent);
+}
+
+.bottom-nav-btn:hover {
+  color: var(--text);
 }
 
 .logout-btn {
@@ -409,16 +465,86 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .topbar-nav {
-    display: none;
-  }
-
   .stat-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
   .main-content {
     padding: 16px;
+    padding-bottom: 80px;
+  }
+
+  /* Hide desktop nav tabs */
+  .topbar-nav {
+    display: none;
+  }
+
+  /* Slim topbar */
+  .topbar {
+    padding: 0 16px;
+    height: 48px;
+  }
+
+  .topbar-logo {
+    font-size: 20px;
+  }
+
+  /* Hide actions by default, show as dropdown when menu open */
+  .topbar-actions {
+    display: none;
+    position: absolute;
+    top: 48px;
+    right: 0;
+    left: 0;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 200;
+  }
+
+  .topbar-actions.menu-open {
+    display: flex;
+  }
+
+  .topbar-actions .sync-btn,
+  .topbar-actions .logout-btn {
+    width: 100%;
+    text-align: center;
+    padding: 10px;
+  }
+
+  .topbar-actions .sync-time {
+    text-align: center;
+  }
+
+  /* Hamburger visible on mobile */
+  .hamburger-btn {
+    display: flex;
+  }
+
+  /* Show bottom nav */
+  .bottom-nav {
+    display: flex;
+  }
+
+  /* Workout table — hide less important columns on mobile */
+  .workout-table th:nth-child(6),
+  .workout-table td:nth-child(6),
+  .workout-table th:nth-child(7),
+  .workout-table td:nth-child(7),
+  .workout-table th:nth-child(8),
+  .workout-table td:nth-child(8),
+  .workout-table th:nth-child(9),
+  .workout-table td:nth-child(9),
+  .workout-table th:nth-child(10),
+  .workout-table td:nth-child(10),
+  .workout-table th:nth-child(11),
+  .workout-table td:nth-child(11),
+  .workout-table th:nth-child(12),
+  .workout-table td:nth-child(12) {
+    display: none;
   }
 }
 

@@ -20,6 +20,7 @@ const TABS = [
 
 export default function Dashboard({ accessToken, onLogout }) {
   const [tab, setTab] = useState('overview');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
@@ -100,7 +101,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   return (
     <div className="dashboard">
       <header className="topbar">
-        <span className="topbar-logo">ThriveMetrics</span>
+        <span className="topbar-logo">LUCAS</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
             <button
@@ -113,6 +114,10 @@ export default function Dashboard({ accessToken, onLogout }) {
           ))}
         </nav>
         <div className="topbar-right">
+          <button className="hamburger-btn" onClick={() => setMenuOpen(o => !o)}>
+            {menuOpen ? '✕' : '☰'}
+          </button>
+          <div className={`topbar-actions${menuOpen ? ' menu-open' : ''}`}>
           {editingGoal ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input
@@ -157,8 +162,22 @@ export default function Dashboard({ accessToken, onLogout }) {
           </button>
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
           <button className="logout-btn" onClick={onLogout}>Sign out</button>
-        </div>
+          </div>{/* end topbar-actions */}
+        </div>{/* end topbar-right */}
       </header>
+
+      {/* Mobile bottom nav */}
+      <nav className="bottom-nav">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            className={`bottom-nav-btn${tab === t.id ? ' active' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
       {syncMsg && (
         <div className={`sync-banner ${syncMsg.type}`}>
