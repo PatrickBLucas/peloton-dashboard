@@ -1,4 +1,3 @@
-// src/components/FoodLogTab.js
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { appendFoodEntry, deleteFoodEntry, fetchFoodLog } from '../api/sheets';
 
@@ -8,30 +7,145 @@ function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
-
 function nowTimeStr() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+function toNum(v) { return parseFloat(v) || 0; }
 
+// ── Barcode scanner using native BarcodeDetector API (Chrome on Android) ────
+function BarcodeScanner({ onDetected, onClose }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+  const detectedRef = useRef(false);
+  const [status, setStatus] = useState('Starting camera...');
+
+  useEffect(() => {
+    async function start() {
+      if (!('BarcodeDetector' in window)) {
+        setStatus('BarcodeDetector not supported on this browser.');
+        return;
+      }
+
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+        });
+      } catch (e) {
+        setStatus(`Camera error: ${e.message}`);
+        return;
+      }
+
+      streamRef.current = stream;
+      const video = videoRef.current;
+      video.srcObject = stream;
+      await video.play();
+      setStatus('Scanning — point at barcode');
+
+      const detector = new window.BarcodeDetector({
+        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
+      });
+
+      async function scan() {
+        if (detectedRef.current) return;
+        try {
+          const results = await detector.detect(video);
+          if (results.length > 0 && !detectedRef.current) {
+            detectedRef.current = true;
+            onDetected(results[0].rawValue);
+            return;
+          }
+        } catch (_) {}
+        rafRef.current = requestAnimationFrame(scan);
+      }
+
+      rafRef.current = requestAnimationFrame(scan);
+    }
+
+    start();
+
+    return () => {
+      detectedRef.current = true;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    };
+  }, [onDetected]);
+
+  return (
+    <div style={{ position: 'relative', background: '#000', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 12 }}>
+      <video
+        ref={videoRef}
+        style={{ width: '100%', display: 'block', maxHeight: 280, objectFit: 'cover' }}
+        muted
+        playsInline
+      />
+      <div style={{
+        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+      }}>
+        <div style={{
+          width: '70%', height: 80, border: '2px solid var(--accent)',
+          borderRadius: 6, boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+        }} />
+      </div>
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        background: 'rgba(0,0,0,0.6)', color: 'var(--accent)',
+        fontSize: 12, textAlign: 'center', padding: '6px 12px',
+        fontFamily: 'var(--font-mono)',
+      }}>
+        {status}
+      </div>
+      <button
+        onClick={onClose}
+        style={{
+          position: 'absolute', top: 8, right: 8,
+          background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff',
+          borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: 16,
+        }}
+      >✕</button>
+    </div>
+  );
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
 export default function FoodLogTab({ data, accessToken }) {
   const { stats } = data;
   const tdee = stats?.tdee ?? null;
 
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
-  const [input, setInput] = useState('');
+
+  // Mode: 'ai' | 'barcode' | 'photo'
+  const [mode, setMode] = useState('ai');
+
+  // AI text mode
+  const [textInput, setTextInput] = useState('');
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState(null); // { description, calories, protein, carbs, fat }
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState(null);
-  const [barcodeMode, setBarcodeMode] = useState(false);
-  const [barcodeInput, setBarcodeInput] = useState('');
+
+  // Barcode mode
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
-  const textareaRef = useRef(null);
+
+  // Photo mode
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [analyzingPhoto, setAnalyzingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
+
+  // Shared
+  const [estimate, setEstimate] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
 
   const today = todayStr();
 
-  // Load today's entries
+  const showMsg = (type, text) => {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  // ── Load today's entries ──────────────────────────────────────────────────
   const loadEntries = useCallback(async () => {
     setLoadingEntries(true);
     try {
@@ -46,7 +160,7 @@ export default function FoodLogTab({ data, accessToken }) {
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
-  // Today's totals
+  // ── Totals ────────────────────────────────────────────────────────────────
   const totals = useMemo(() => ({
     calories: entries.reduce((s, e) => s + (e.calories || 0), 0),
     protein:  entries.reduce((s, e) => s + (e.protein  || 0), 0),
@@ -54,120 +168,184 @@ export default function FoodLogTab({ data, accessToken }) {
     fat:      entries.reduce((s, e) => s + (e.fat      || 0), 0),
   }), [entries]);
 
-  const netCalories = tdee ? totals.calories - tdee : null;
+  const net = tdee !== null ? totals.calories - tdee : null;
+  const netColor = net === null ? 'var(--text)'
+    : net > 200  ? 'var(--red)'
+    : net < -200 ? 'var(--green)'
+    : 'var(--accent)';
 
-  // AI estimate via Claude API
-  const handleEstimate = useCallback(async () => {
-    if (!input.trim()) return;
+  // ── Claude API call (shared by text + photo modes) ────────────────────────
+  async function callClaude(messages) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 400,
+        system: `You are a nutrition estimator. Return ONLY a valid JSON object — no markdown, no explanation:
+{
+  "description": "short clean meal name",
+  "calories": number,
+  "protein": number,
+  "carbs": number,
+  "fat": number
+}
+Use realistic average estimates. For photos, estimate based on visible portion sizes.`,
+        messages,
+      }),
+    });
+    const json = await res.json();
+    const text = json.content?.[0]?.text || '';
+    return JSON.parse(text.replace(/```json|```/g, '').trim());
+  }
+
+  // ── AI text estimate ──────────────────────────────────────────────────────
+  const handleTextEstimate = useCallback(async () => {
+    if (!textInput.trim()) return;
     setEstimating(true);
     setEstimate(null);
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 300,
-          system: `You are a nutrition estimator. Given a meal description, return ONLY a JSON object with these fields:
-{
-  "description": "clean short name for the meal",
-  "calories": number,
-  "protein": number (grams),
-  "carbs": number (grams),
-  "fat": number (grams)
-}
-No markdown, no explanation, just the JSON object. Use reasonable average estimates for home-cooked meals.`,
-          messages: [{ role: 'user', content: input.trim() }],
-        }),
-      });
-      const json = await res.json();
-      const text = json.content?.[0]?.text || '';
-      const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
-      setEstimate(parsed);
+      const result = await callClaude([{ role: 'user', content: textInput.trim() }]);
+      setEstimate({ ...result, source: 'AI text' });
     } catch (e) {
-      setSaveMsg({ type: 'error', text: 'AI estimate failed. Try again or enter manually.' });
+      showMsg('error', 'AI estimate failed. Try again.');
     } finally {
       setEstimating(false);
     }
-  }, [input]);
+  }, [textInput]);
 
-  // Barcode lookup via Open Food Facts
-  const handleBarcodeLookup = useCallback(async () => {
-    if (!barcodeInput.trim()) return;
+  // ── Barcode detected ──────────────────────────────────────────────────────
+  const handleBarcodeDetected = useCallback(async (barcode) => {
+    setScannerOpen(false);
     setLookingUp(true);
     setEstimate(null);
     try {
-      const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcodeInput.trim()}.json`);
+      const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
       const json = await res.json();
       if (json.status !== 1) {
-        setSaveMsg({ type: 'error', text: 'Product not found. Try AI estimate instead.' });
+        showMsg('error', 'Product not found in database.');
         return;
       }
       const p = json.product;
       const n = p.nutriments || {};
-      const serving = p.serving_size || '100g';
-      const per100 = (field) => toNum(n[field + '_100g'] || n[field]);
+      const per100 = (f) => toNum(n[`${f}_100g`] ?? n[f]);
+      const kcal = per100('energy-kcal') || Math.round(per100('energy') / 4.184);
       setEstimate({
         description: p.product_name || 'Scanned product',
-        calories: Math.round(per100('energy-kcal') || per100('energy') / 4.184 || 0),
-        protein:  Math.round(per100('proteins') || 0),
-        carbs:    Math.round(per100('carbohydrates') || 0),
-        fat:      Math.round(per100('fat') || 0),
-        note:     `Per 100g. Serving: ${serving}`,
+        calories: Math.round(kcal),
+        protein:  Math.round(per100('proteins')),
+        carbs:    Math.round(per100('carbohydrates')),
+        fat:      Math.round(per100('fat')),
+        note:     `Per 100g · Serving size: ${p.serving_size || 'unknown'}`,
+        source:   'barcode',
       });
-      setBarcodeMode(false);
-      setBarcodeInput('');
     } catch (e) {
-      setSaveMsg({ type: 'error', text: 'Barcode lookup failed.' });
+      showMsg('error', 'Barcode lookup failed.');
     } finally {
       setLookingUp(false);
     }
-  }, [barcodeInput]);
+  }, []);
 
-  // Save to sheet
-  const handleSave = useCallback(async (override) => {
-    const toSave = override || estimate;
-    if (!toSave) return;
+  // ── Photo selected ────────────────────────────────────────────────────────
+  const handlePhotoChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setEstimate(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => setPhotoPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handlePhotoEstimate = useCallback(async () => {
+    if (!photoFile) return;
+    setAnalyzingPhoto(true);
+    setEstimate(null);
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result.split(',')[1]);
+        r.onerror = reject;
+        r.readAsDataURL(photoFile);
+      });
+      const mediaType = photoFile.type || 'image/jpeg';
+      const result = await callClaude([{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: mediaType, data: base64 },
+          },
+          {
+            type: 'text',
+            text: 'Estimate the calories and macros for the food shown in this photo. Consider visible portion sizes.',
+          },
+        ],
+      }]);
+      setEstimate({ ...result, source: 'photo' });
+    } catch (e) {
+      showMsg('error', `Photo analysis failed: ${e.message}`);
+    } finally {
+      setAnalyzingPhoto(false);
+    }
+  }, [photoFile]);
+
+  // ── Save to sheet ─────────────────────────────────────────────────────────
+  const handleSave = useCallback(async () => {
+    if (!estimate) return;
     setSaving(true);
     try {
       await appendFoodEntry(accessToken, {
         date:        today,
         time:        nowTimeStr(),
-        description: toSave.description,
-        calories:    toSave.calories,
-        protein:     toSave.protein,
-        carbs:       toSave.carbs,
-        fat:         toSave.fat,
-        source:      toSave.source || (input ? 'AI' : 'barcode'),
+        description: estimate.description,
+        calories:    estimate.calories,
+        protein:     estimate.protein,
+        carbs:       estimate.carbs,
+        fat:         estimate.fat,
+        source:      estimate.source || mode,
       });
       setEstimate(null);
-      setInput('');
-      setSaveMsg({ type: 'success', text: 'Logged!' });
-      setTimeout(() => setSaveMsg(null), 2000);
+      setTextInput('');
+      setPhotoFile(null);
+      setPhotoPreview(null);
+      showMsg('success', 'Logged!');
       await loadEntries();
     } catch (e) {
-      setSaveMsg({ type: 'error', text: `Failed to save: ${e.message}` });
+      showMsg('error', `Save failed: ${e.message}`);
     } finally {
       setSaving(false);
     }
-  }, [estimate, accessToken, today, input, loadEntries]);
+  }, [estimate, accessToken, today, mode, loadEntries]);
 
-  // Delete entry
+  // ── Delete entry ──────────────────────────────────────────────────────────
   const handleDelete = useCallback(async (idx) => {
     try {
       await deleteFoodEntry(accessToken, idx);
       await loadEntries();
     } catch (e) {
-      setSaveMsg({ type: 'error', text: 'Delete failed.' });
+      showMsg('error', 'Delete failed.');
     }
   }, [accessToken, loadEntries]);
 
-  const toNum = (v) => parseFloat(v) || 0;
+  // ── Macro pill ────────────────────────────────────────────────────────────
+  const MacroPill = ({ label, value, color }) => (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
+    </div>
+  );
 
-  const netColor = netCalories === null ? 'var(--text)'
-    : netCalories > 200  ? 'var(--red)'
-    : netCalories < -200 ? 'var(--green)'
-    : 'var(--accent)';
+  // ── Mode button ───────────────────────────────────────────────────────────
+  const ModeBtn = ({ id, icon, label }) => (
+    <button
+      className={`nav-btn${mode === id ? ' active' : ''}`}
+      onClick={() => { setMode(id); setEstimate(null); setScannerOpen(false); }}
+      style={{ flex: 1, padding: '10px 4px', fontSize: 13 }}
+    >
+      {icon} {label}
+    </button>
+  );
 
   return (
     <>
@@ -181,18 +359,14 @@ No markdown, no explanation, just the JSON object. Use reasonable average estima
         <div className="stat-card">
           <div className="stat-label">Calories In</div>
           <div className="stat-value accent">{totals.calories.toLocaleString()}</div>
-          <div className="stat-sub">
-            {tdee ? `TDEE: ${tdee.toLocaleString()} kcal` : 'TDEE loading...'}
-          </div>
+          <div className="stat-sub">{tdee ? `TDEE: ${tdee.toLocaleString()} kcal` : 'TDEE loading...'}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Net vs TDEE</div>
           <div className="stat-value" style={{ color: netColor }}>
-            {netCalories === null ? '--' : `${netCalories > 0 ? '+' : ''}${netCalories.toLocaleString()}`}
+            {net === null ? '--' : `${net > 0 ? '+' : ''}${net.toLocaleString()}`}
           </div>
-          <div className="stat-sub">
-            {netCalories === null ? '' : netCalories > 0 ? 'over TDEE' : netCalories < 0 ? 'under TDEE' : 'at TDEE'}
-          </div>
+          <div className="stat-sub">{net === null ? '' : net > 0 ? 'over TDEE' : net < 0 ? 'under TDEE' : 'at TDEE'}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Protein</div>
@@ -206,113 +380,136 @@ No markdown, no explanation, just the JSON object. Use reasonable average estima
         </div>
       </div>
 
-      {saveMsg && (
-        <div className={`sync-banner ${saveMsg.type}`} style={{ marginBottom: 16 }}>
-          {saveMsg.text}
+      {msg && (
+        <div className={`sync-banner ${msg.type}`} style={{ marginBottom: 16 }}>
+          {msg.text}
         </div>
       )}
 
-      {/* Input area */}
+      {/* Input card */}
       <div className="chart-card" style={{ marginBottom: 16 }}>
-        {/* Mode toggle */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-          <button
-            className={`nav-btn${!barcodeMode ? ' active' : ''}`}
-            onClick={() => { setBarcodeMode(false); setEstimate(null); }}
-            style={{ flex: 1, padding: '10px' }}
-          >
-            🤖 AI Estimate
-          </button>
-          <button
-            className={`nav-btn${barcodeMode ? ' active' : ''}`}
-            onClick={() => { setBarcodeMode(true); setEstimate(null); }}
-            style={{ flex: 1, padding: '10px' }}
-          >
-            📦 Barcode
-          </button>
+        {/* Mode selector */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          <ModeBtn id="ai"      icon="🤖" label="AI Text" />
+          <ModeBtn id="barcode" icon="📦" label="Barcode" />
+          <ModeBtn id="photo"   icon="📷" label="Photo" />
         </div>
 
-        {!barcodeMode ? (
+        {/* ── AI Text ── */}
+        {mode === 'ai' && (
           <>
             <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
+              value={textInput}
+              onChange={e => setTextInput(e.target.value)}
               placeholder="Describe your meal... e.g. 'grilled chicken breast, 1 cup white rice, side salad with olive oil'"
               rows={3}
               style={{
                 width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)',
                 borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14,
-                fontFamily: 'var(--font-body)', padding: '10px 12px', resize: 'none',
-                boxSizing: 'border-box',
+                fontFamily: 'var(--font-body)', padding: '10px 12px', resize: 'none', boxSizing: 'border-box',
               }}
-              onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) handleEstimate(); }}
             />
             <button
               className="sync-btn"
-              onClick={handleEstimate}
-              disabled={estimating || !input.trim()}
-              style={{ width: '100%', marginTop: 10, padding: '12px', fontSize: 14 }}
+              onClick={handleTextEstimate}
+              disabled={estimating || !textInput.trim()}
+              style={{ width: '100%', marginTop: 10, padding: 12, fontSize: 14 }}
             >
               {estimating ? 'Estimating...' : 'Estimate Calories'}
             </button>
           </>
-        ) : (
+        )}
+
+        {/* ── Barcode ── */}
+        {mode === 'barcode' && (
           <>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={barcodeInput}
-              onChange={e => setBarcodeInput(e.target.value)}
-              placeholder="Enter or scan barcode number"
-              style={{
-                width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 16,
-                fontFamily: 'var(--font-mono)', padding: '12px', boxSizing: 'border-box',
-              }}
-              onKeyDown={e => { if (e.key === 'Enter') handleBarcodeLookup(); }}
-            />
-            <button
-              className="sync-btn"
-              onClick={handleBarcodeLookup}
-              disabled={lookingUp || !barcodeInput.trim()}
-              style={{ width: '100%', marginTop: 10, padding: '12px', fontSize: 14 }}
-            >
-              {lookingUp ? 'Looking up...' : 'Look Up Barcode'}
-            </button>
+            {scannerOpen ? (
+              <BarcodeScanner
+                onDetected={handleBarcodeDetected}
+                onClose={() => setScannerOpen(false)}
+              />
+            ) : (
+              <button
+                className="sync-btn"
+                onClick={() => setScannerOpen(true)}
+                disabled={lookingUp}
+                style={{ width: '100%', padding: 14, fontSize: 15 }}
+              >
+                {lookingUp ? 'Looking up...' : '📷 Open Barcode Scanner'}
+              </button>
+            )}
           </>
         )}
 
-        {/* Estimate result */}
+        {/* ── Photo ── */}
+        {mode === 'photo' && (
+          <>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoChange}
+              style={{ display: 'none' }}
+            />
+            {photoPreview ? (
+              <>
+                <img
+                  src={photoPreview}
+                  alt="Food"
+                  style={{ width: '100%', borderRadius: 'var(--radius)', marginBottom: 10, maxHeight: 240, objectFit: 'cover' }}
+                />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="sync-btn"
+                    onClick={handlePhotoEstimate}
+                    disabled={analyzingPhoto}
+                    style={{ flex: 1, padding: 12, fontSize: 14 }}
+                  >
+                    {analyzingPhoto ? 'Analyzing...' : '🤖 Analyze Photo'}
+                  </button>
+                  <button
+                    className="logout-btn"
+                    onClick={() => { setPhotoFile(null); setPhotoPreview(null); setEstimate(null); }}
+                    style={{ padding: '12px 16px' }}
+                  >
+                    Retake
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                className="sync-btn"
+                onClick={() => photoInputRef.current?.click()}
+                style={{ width: '100%', padding: 14, fontSize: 15 }}
+              >
+                📷 Take a Photo of Your Meal
+              </button>
+            )}
+          </>
+        )}
+
+        {/* ── Estimate result (shared) ── */}
         {estimate && (
           <div style={{
             marginTop: 14, padding: 14, background: 'var(--bg3)',
             borderRadius: 'var(--radius)', border: '1px solid var(--border)',
           }}>
-            <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 15 }}>
-              {estimate.description}
-            </div>
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 15 }}>{estimate.description}</div>
             {estimate.note && (
-              <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8 }}>{estimate.note}</div>
+              <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 10 }}>{estimate.note}</div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
-              {[
-                ['Calories', estimate.calories, 'var(--accent)'],
-                ['Protein',  `${Math.round(estimate.protein)}g`,  'var(--green)'],
-                ['Carbs',    `${Math.round(estimate.carbs)}g`,    'var(--blue)'],
-                ['Fat',      `${Math.round(estimate.fat)}g`,      'var(--text2)'],
-              ].map(([label, val, color]) => (
-                <div key={label} style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color }}>{val}</div>
-                </div>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
+              <MacroPill label="Calories" value={estimate.calories}               color="var(--accent)" />
+              <MacroPill label="Protein"  value={`${Math.round(estimate.protein)}g`}  color="var(--green)"  />
+              <MacroPill label="Carbs"    value={`${Math.round(estimate.carbs)}g`}    color="var(--blue)"   />
+              <MacroPill label="Fat"      value={`${Math.round(estimate.fat)}g`}      color="var(--text2)"  />
             </div>
             <button
               className="sync-btn"
-              onClick={() => handleSave()}
+              onClick={handleSave}
               disabled={saving}
-              style={{ width: '100%', padding: '12px', fontSize: 14 }}
+              style={{ width: '100%', padding: 12, fontSize: 14 }}
             >
               {saving ? 'Saving...' : '+ Log This Meal'}
             </button>
@@ -322,7 +519,11 @@ No markdown, no explanation, just the JSON object. Use reasonable average estima
 
       {/* Today's log */}
       <div className="chart-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 600, color: 'var(--text2)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        <div style={{
+          padding: '14px 16px 10px', borderBottom: '1px solid var(--border)',
+          fontSize: 12, fontWeight: 600, color: 'var(--text2)',
+          letterSpacing: '0.08em', textTransform: 'uppercase',
+        }}>
           Today's Entries
         </div>
         {loadingEntries ? (
@@ -348,9 +549,7 @@ No markdown, no explanation, just the JSON object. Use reasonable average estima
               <button
                 onClick={() => handleDelete(i)}
                 style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, padding: '4px 8px', flexShrink: 0 }}
-              >
-                ✕
-              </button>
+              >✕</button>
             </div>
           ))
         )}
