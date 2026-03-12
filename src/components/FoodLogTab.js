@@ -12,7 +12,6 @@ function nowTimeStr() {
 }
 function toNum(v) { return parseFloat(v) || 0; }
 
-<<<<<<< HEAD
 // ── Barcode scanner using native BarcodeDetector API (Chrome on Android) ────
 function BarcodeScanner({ onDetected, onClose }) {
   const videoRef = useRef(null);
@@ -62,77 +61,14 @@ function BarcodeScanner({ onDetected, onClose }) {
       }
 
       rafRef.current = requestAnimationFrame(scan);
-=======
-// ── Barcode scanner using ZXing loaded from CDN ─────────────────────────────
-function BarcodeScanner({ onDetected, onClose }) {
-  const videoRef = useRef(null);
-  const readerRef = useRef(null);
-  const [status, setStatus] = useState('Starting camera...');
-
-  useEffect(() => {
-    let stopped = false;
-
-    async function start() {
-      // Load ZXing from CDN if not already present
-      if (!window.ZXingBrowser) {
-        setStatus('Loading scanner...');
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js';
-          s.onload = resolve;
-          s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      }
-
-      if (stopped) return;
-      setStatus('Scanning — point at barcode');
-
-      try {
-        const hints = new Map();
-        const { BrowserMultiFormatReader, BarcodeFormat } = window.ZXingBrowser;
-        hints.set(2, [
-          BarcodeFormat.EAN_13,
-          BarcodeFormat.EAN_8,
-          BarcodeFormat.UPC_A,
-          BarcodeFormat.UPC_E,
-          BarcodeFormat.CODE_128,
-          BarcodeFormat.CODE_39,
-          BarcodeFormat.QR_CODE,
-        ]);
-        const reader = new BrowserMultiFormatReader(hints);
-        readerRef.current = reader;
-
-        const devices = await window.ZXingBrowser.BrowserMultiFormatReader.listVideoInputDevices();
-        // Prefer rear camera
-        const back = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
-        const deviceId = back?.deviceId;
-
-        await reader.decodeFromVideoDevice(deviceId, videoRef.current, (result, err) => {
-          if (result && !stopped) {
-            stopped = true;
-            onDetected(result.getText());
-          }
-        });
-      } catch (e) {
-        setStatus(`Camera error: ${e.message}`);
-      }
->>>>>>> 0342585d613dcdfb956209b45a20b97929d7de89
     }
 
     start();
 
     return () => {
-<<<<<<< HEAD
       detectedRef.current = true;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-=======
-      stopped = true;
-      if (readerRef.current) {
-        try { readerRef.current.reset(); } catch (_) {}
-      }
->>>>>>> 0342585d613dcdfb956209b45a20b97929d7de89
     };
   }, [onDetected]);
 
@@ -144,10 +80,6 @@ function BarcodeScanner({ onDetected, onClose }) {
         muted
         playsInline
       />
-<<<<<<< HEAD
-=======
-      {/* Targeting overlay */}
->>>>>>> 0342585d613dcdfb956209b45a20b97929d7de89
       <div style={{
         position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
       }}>
