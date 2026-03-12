@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/peloton-dashboard/static/css/main.df567849.css",
+    "main.js": "/peloton-dashboard/static/js/main.400d01f2.js",
+    "index.html": "/peloton-dashboard/index.html",
+    "main.df567849.css.map": "/peloton-dashboard/static/css/main.df567849.css.map",
+    "main.400d01f2.js.map": "/peloton-dashboard/static/js/main.400d01f2.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.df567849.css",
+    "static/js/main.400d01f2.js"
+  ]
+}
