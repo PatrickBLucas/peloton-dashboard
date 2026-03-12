@@ -101,7 +101,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   return (
     <div className="dashboard">
       <header className="topbar">
-        <span className="topbar-logo">LUCAS</span>
+        <span className="topbar-logo">ThriveMetrics</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
             <button
@@ -114,10 +114,8 @@ export default function Dashboard({ accessToken, onLogout }) {
           ))}
         </nav>
         <div className="topbar-right">
-          <button className="hamburger-btn" onClick={() => setMenuOpen(o => !o)}>
-            {menuOpen ? '✕' : '☰'}
-          </button>
-          <div className={`topbar-actions${menuOpen ? ' menu-open' : ''}`}>
+          {/* Desktop: inline actions */}
+          <div className="topbar-actions desktop-actions">
           {editingGoal ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input
@@ -147,11 +145,7 @@ export default function Dashboard({ accessToken, onLogout }) {
               Goal: {goalWeight} lbs
             </button>
           )}
-          <button
-            className="sync-btn"
-            onClick={() => handleSync('108')}
-            disabled={syncing !== null}
-          >
+          <button className="sync-btn" onClick={() => handleSync('108')} disabled={syncing !== null}>
             {syncing === '108' ? '...' : '📧 10-8'}
           </button>
           <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null}>
@@ -162,9 +156,36 @@ export default function Dashboard({ accessToken, onLogout }) {
           </button>
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
           <button className="logout-btn" onClick={onLogout}>Sign out</button>
-          </div>{/* end topbar-actions */}
-        </div>{/* end topbar-right */}
+          </div>
+          {/* Mobile: hamburger toggle */}
+          <button className="hamburger-btn" onClick={() => setMenuOpen(o => !o)}>
+            {menuOpen ? '✕' : '☰'}
+          </button>
+        </div>
       </header>
+
+      {/* Mobile dropdown menu — outside header so it spans full width */}
+      {menuOpen && (
+        <div className="mobile-menu">
+          <button
+            className="sync-btn"
+            onClick={() => { setGoalInput(goalWeight.toString()); setEditingGoal(true); setMenuOpen(false); }}
+          >
+            Goal: {goalWeight} lbs
+          </button>
+          <button className="sync-btn" onClick={() => { handleSync('108'); setMenuOpen(false); }} disabled={syncing !== null}>
+            {syncing === '108' ? '...' : '📧 10-8'}
+          </button>
+          <button className="sync-btn" onClick={() => { handleSync('fitbit'); setMenuOpen(false); }} disabled={syncing !== null}>
+            {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
+          </button>
+          <button className="sync-btn" onClick={() => { handleSync('peloton'); setMenuOpen(false); }} disabled={syncing !== null}>
+            {syncing === 'peloton' ? '...' : '⟳ Peloton'}
+          </button>
+          {syncTime && <span className="sync-time">loaded {syncTime}</span>}
+          <button className="logout-btn" onClick={onLogout}>Sign out</button>
+        </div>
+      )}
 
       {/* Mobile bottom nav */}
       <nav className="bottom-nav">

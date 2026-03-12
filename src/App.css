@@ -492,30 +492,34 @@ body {
   /* Hide actions by default, show as dropdown when menu open */
   .topbar-actions {
     display: none;
-    position: absolute;
-    top: 48px;
-    right: 0;
-    left: 0;
+  }
+
+  .desktop-actions {
+    display: none;
+  }
+
+  /* Full-width mobile dropdown */
+  .mobile-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     background: var(--bg2);
     border-bottom: 1px solid var(--border);
-    padding: 12px 16px;
-    flex-direction: column;
-    gap: 8px;
+    padding: 16px;
+    position: sticky;
+    top: 48px;
     z-index: 200;
   }
 
-  .topbar-actions.menu-open {
-    display: flex;
-  }
-
-  .topbar-actions .sync-btn,
-  .topbar-actions .logout-btn {
+  .mobile-menu .sync-btn,
+  .mobile-menu .logout-btn {
     width: 100%;
     text-align: center;
-    padding: 10px;
+    padding: 12px;
+    font-size: 14px;
   }
 
-  .topbar-actions .sync-time {
+  .mobile-menu .sync-time {
     text-align: center;
   }
 
