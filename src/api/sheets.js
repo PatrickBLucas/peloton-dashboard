@@ -232,3 +232,64 @@ export async function fetch108(accessToken) {
     }))
     .filter(r => r.date);
 }
+
+// ── Food Log ─────────────────────────────────────────────────────────────────
+// Sheet: "Food Log" — Date | Time | Description | Calories | Protein | Carbs | Fat | Source
+
+export async function fetchFoodLog(accessToken) {
+  const rows = await fetchRange(accessToken, 'Food Log!A2:H1000');
+  return rows
+    .filter(r => r[0])
+    .map(r => ({
+      date:        r[0] || '',
+      time:        r[1] || '',
+      description: r[2] || '',
+      calories:    toNum(r[3]),
+      protein:     toNum(r[4]),
+      carbs:       toNum(r[5]),
+      fat:         toNum(r[6]),
+      source:      r[7] || '',
+    }));
+}
+
+export async function appendFoodEntry(accessToken, entry) {
+  // entry: { date, time, description, calories, protein, carbs, fat, source }
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent('Food Log!A:H')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      values: [[
+        entry.date,
+        entry.time,
+        entry.description,
+        entry.calories || '',
+        entry.protein  || '',
+        entry.carbs    || '',
+        entry.fat      || '',
+        entry.source   || '',
+      ]],
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to log food: ${res.status}`);
+  return await res.json();
+}
+
+export async function deleteFoodEntry(accessToken, rowIndex) {
+  // rowIndex is 0-based from fetched data, sheet row = rowIndex + 2
+  const sheetRow = rowIndex + 2;
+  // Clear the row (Sheets API doesn't have a simple delete row without batchUpdate)
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent(`Food Log!A${sheetRow}:H${sheetRow}`)}:clear`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!res.ok) throw new Error(`Failed to delete entry: ${res.status}`);
+  return await res.json();
+}

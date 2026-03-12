@@ -9,13 +9,15 @@ import WorkoutsTab from './WorkoutsTab';
 import WeightTab from './WeightTab';
 import CaloriesTab from './CaloriesTab';
 import TrackerTab from './TrackerTab';
+import FoodLogTab from './FoodLogTab';
 
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'workouts', label: 'Workouts' },
-  { id: 'weight', label: 'Weight' },
-  { id: 'calories', label: 'Calories' },
-  { id: '108', label: '10-8 Tracker' },
+  { id: 'overview',  label: 'Overview' },
+  { id: 'workouts',  label: 'Workouts' },
+  { id: 'weight',    label: 'Weight' },
+  { id: 'calories',  label: 'Calories' },
+  { id: '108',       label: '10-8 Tracker' },
+  { id: 'foodlog',   label: 'Log Meal' },
 ];
 
 export default function Dashboard({ accessToken, onLogout }) {
@@ -101,7 +103,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   return (
     <div className="dashboard">
       <header className="topbar">
-        <span className="topbar-logo">ThriveMetrics</span>
+        <span className="topbar-logo">LUCAS</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
             <button
@@ -223,11 +225,12 @@ export default function Dashboard({ accessToken, onLogout }) {
         )}
         {data && !loading && (
           <>
-            {tab === 'overview' && <OverviewTab data={data} />}
-            {tab === 'workouts' && <WorkoutsTab data={data} />}
-            {tab === 'weight' && <WeightTab data={data} />}
-            {tab === 'calories' && <CaloriesTab data={data} />}
-            {tab === '108' && <TrackerTab data={data} />}
+            {tab === 'overview'  && <OverviewTab data={data} />}
+            {tab === 'workouts'  && <WorkoutsTab data={data} />}
+            {tab === 'weight'    && <WeightTab data={data} />}
+            {tab === 'calories'  && <CaloriesTab data={data} />}
+            {tab === '108'       && <TrackerTab data={data} />}
+            {tab === 'foodlog'   && <FoodLogTab data={data} accessToken={accessToken} />}
           </>
         )}
       </main>
