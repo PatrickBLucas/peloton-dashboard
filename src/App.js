@@ -17,7 +17,6 @@ function LoginScreen({ onLogin }) {
       <div className="login-card">
         <div className="login-logo">
           <span className="logo-text">Thrive Metrics</span>
-
         </div>
         <p className="login-tagline">Your training. Your data. Your progress.</p>
         <button className="login-btn" onClick={() => login()}>

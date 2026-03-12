@@ -103,7 +103,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   return (
     <div className="dashboard">
       <header className="topbar">
-        <span className="topbar-logo">LUCAS</span>
+        <span className="topbar-logo">THRIVE METRICS</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
             <button
