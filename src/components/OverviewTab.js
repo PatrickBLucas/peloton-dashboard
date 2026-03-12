@@ -30,7 +30,7 @@ export default function OverviewTab({ data }) {
       .slice(-20)
       .map(w => ({
         date: format(w.date, 'MMM d'),
-        minutes: Math.round(w.movingTimeMin || 0),
+        minutes: Math.round(w.durationMin || 0),
       }));
   }, [workouts]);
 
@@ -42,13 +42,19 @@ export default function OverviewTab({ data }) {
       .map(w => ({ date: format(w.date, 'MMM d'), weight: w.weight }));
   }, [weight]);
 
-  // Projected goal date from linear regression on last 30 days of weight
+  // Projected goal date from linear regression on last 30 days of weight (falls back to 60)
   const projectedDate = useMemo(() => {
-    const cutoff = subDays(new Date(), 30);
-    const entries = weight
-      .filter(w => w.weight && w.date >= cutoff)
-      .sort((a, b) => a.date - b.date);
-    if (entries.length < 5) return 'Not enough recent data';
+    const getEntries = (days) => {
+      const cutoff = subDays(new Date(), days);
+      return weight
+        .filter(w => w.weight && w.date >= cutoff)
+        .sort((a, b) => a.date - b.date);
+    };
+
+    let entries = getEntries(30);
+    if (entries.length < 5) entries = getEntries(60);
+    if (entries.length < 5) return 'Not enough data';
+
     const start = entries[0].date;
     const pts = entries.map(e => ({
       x: (e.date - start) / (1000 * 60 * 60 * 24),

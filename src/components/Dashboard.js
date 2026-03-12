@@ -74,12 +74,12 @@ export default function Dashboard({ accessToken, onLogout }) {
   }, [accessToken, goalInput, data]);
 
   const handleSync = useCallback(async (type) => {
-    const fnName = type === 'fitbit' ? 'sync' : type === 'strava' ? 'getStravaActivities' : 'sendPDF';
+    const fnName = type === 'fitbit' ? 'sync' : type === 'peloton' ? 'syncPeloton' : 'sendPDF';
     setSyncing(type);
     setSyncMsg(null);
     try {
       await triggerSync(accessToken, fnName);
-      setSyncMsg({ type: 'success', text: `${type === 'fitbit' ? 'Fitbit' : type === 'strava' ? 'Strava' : '10-8 report'} ${type === '108' ? 'sent!' : 'sync started. Reloading in 5s...'}` });
+      setSyncMsg({ type: 'success', text: `${type === 'fitbit' ? 'Fitbit' : type === 'peloton' ? 'Peloton' : '10-8 report'} ${type === '108' ? 'sent!' : 'sync started. Reloading in 5s...'}` });
       if (type !== '108') {
         setTimeout(() => {
           loadData();
@@ -100,7 +100,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   return (
     <div className="dashboard">
       <header className="topbar">
-        <span className="topbar-logo">LUCAS</span>
+        <span className="topbar-logo">ThriveMetrics</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
             <button
@@ -152,8 +152,8 @@ export default function Dashboard({ accessToken, onLogout }) {
           <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null}>
             {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
           </button>
-          <button className="sync-btn" onClick={() => handleSync('strava')} disabled={syncing !== null}>
-            {syncing === 'strava' ? '...' : '⟳ Strava'}
+          <button className="sync-btn" onClick={() => handleSync('peloton')} disabled={syncing !== null}>
+            {syncing === 'peloton' ? '...' : '⟳ Peloton'}
           </button>
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
           <button className="logout-btn" onClick={onLogout}>Sign out</button>

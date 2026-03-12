@@ -30,20 +30,31 @@ function toNum(val) {
   return isNaN(n) ? null : n;
 }
 
-// ── Peloton workouts from Strava Data sheet ──────────────────────────────────
+// ── Peloton workouts ──────────────────────────────────────────────────────────
+// Columns: Date | Title | Type | Duration(min) | Calories | Output(kJ) |
+//          Avg Cadence | Avg Resistance | HR Z1 | HR Z2 | HR Z3 | HR Z4 | HR Z5 |
+//          Effort Score | Instructor | Workout ID
 export async function fetchWorkouts(accessToken) {
-  // Strava Data: Start Date | Name | Type | Distance (m) | Moving Time (min) | Elapsed Time (s) | Calories
-  const rows = await fetchRange(accessToken, 'Strava Data!A2:G1000');
+  const rows = await fetchRange(accessToken, 'Peloton!A2:P1000');
   return rows
     .filter(r => r[0])
     .map(r => ({
-      date: parseDate(r[0]),
-      name: r[1] || '',
-      type: r[2] || '',
-      distanceM: toNum(r[3]),
-      movingTimeMin: toNum(r[4]),
-      elapsedTimeSec: toNum(r[5]),
-      calories: toNum(r[6]),
+      date:        parseDate(r[0]),
+      title:       r[1] || '',
+      type:        r[2] || '',
+      durationMin: toNum(r[3]),
+      calories:    toNum(r[4]),
+      outputKj:    toNum(r[5]),
+      avgCadence:  toNum(r[6]),
+      avgRes:      toNum(r[7]),
+      hrZ1:        toNum(r[8]),
+      hrZ2:        toNum(r[9]),
+      hrZ3:        toNum(r[10]),
+      hrZ4:        toNum(r[11]),
+      hrZ5:        toNum(r[12]),
+      effortScore: toNum(r[13]),
+      instructor:  r[14] || '',
+      workoutId:   r[15] || '',
     }))
     .filter(w => w.date);
 }
@@ -164,7 +175,7 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
   const todayData = fitbitData.find(d => toDateStr(d.date) === todayStr);
   const yesterdayData = fitbitData.find(d => toDateStr(d.date) === yesterdayStr);
 
-  const totalMinutes = workouts.reduce((s, w) => s + (w.movingTimeMin || 0), 0);
+  const totalMinutes = workouts.reduce((s, w) => s + (w.durationMin || 0), 0);
 
   return {
     bmr,
