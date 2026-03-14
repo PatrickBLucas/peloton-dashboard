@@ -252,7 +252,7 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 56px;
+  height: 62px;
   background: var(--bg2);
   border-top: 1px solid var(--border);
   z-index: 100;
@@ -264,10 +264,14 @@ body {
   border: none;
   color: var(--text2);
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   cursor: pointer;
-  padding: 6px 4px;
+  padding: 8px 2px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   transition: color 0.15s;
@@ -278,6 +282,40 @@ body {
 }
 
 .bottom-nav-btn:hover {
+  color: var(--text);
+}
+
+.bottom-nav-label {
+  font-size: 9px;
+  line-height: 1;
+}
+
+.topbar-overflow-tabs {
+  display: none;
+  gap: 6px;
+  align-items: center;
+}
+
+.overflow-tab-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 10px;
+  letter-spacing: 0.03em;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.overflow-tab-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.overflow-tab-btn:hover {
   color: var(--text);
 }
 
@@ -356,6 +394,10 @@ body {
 }
 
 /* ── Stat Cards ── */
+.workouts-stat-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -469,6 +511,10 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .workouts-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .main-content {
     padding: 16px;
     padding-bottom: 80px;
@@ -533,7 +579,54 @@ body {
     display: flex;
   }
 
-  /* Workout table — hide less important columns on mobile */
+  .topbar-overflow-tabs {
+    display: flex;
+  }
+
+  .main-content {
+    padding-bottom: 72px;
+  }
+
+  /* Workout table — constrain and hide columns on mobile */
+  .workout-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .workout-table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .workout-table th:nth-child(1),
+  .workout-table td:nth-child(1) {
+    width: 68px;
+  }
+
+  .workout-table th:nth-child(2),
+  .workout-table td:nth-child(2) {
+    width: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+  }
+
+  .workout-table th:nth-child(3),
+  .workout-table td:nth-child(3) {
+    width: 70px;
+  }
+
+  .workout-table th:nth-child(4),
+  .workout-table td:nth-child(4) {
+    width: 52px;
+  }
+
+  .workout-table th:nth-child(5),
+  .workout-table td:nth-child(5) {
+    width: 56px;
+  }
+
   .workout-table th:nth-child(6),
   .workout-table td:nth-child(6),
   .workout-table th:nth-child(7),

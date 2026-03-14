@@ -96,7 +96,7 @@ export default function WorkoutsTab({ data }) {
         <span className="section-sub">{workouts.length} activities via Peloton</span>
       </div>
 
-      <div className="stat-grid" style={{ marginBottom: 24, gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="stat-grid workouts-stat-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
           <div className="stat-label">Total Calories Burned</div>
           <div className="stat-value accent">
@@ -173,6 +173,7 @@ export default function WorkoutsTab({ data }) {
       </div>
 
       <div className="chart-card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="workout-table-wrap">
         <table className="workout-table">
           <thead>
             <tr>
@@ -233,6 +234,7 @@ export default function WorkoutsTab({ data }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   );
