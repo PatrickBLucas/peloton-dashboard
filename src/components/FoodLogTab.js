@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { appendFoodEntry, deleteFoodEntry, fetchFoodLog, fetchSavedMeals, saveMeal, deleteSavedMeal } from '../api/sheets';
+import { appendFoodEntry, deleteFoodEntry, fetchFoodLog, fetchSavedMeals, saveMeal, deleteSavedMeal, estimateNutrition } from '../api/sheets';
 
 function todayStr() {
   const d = new Date();
@@ -276,23 +276,9 @@ export default function FoodLogTab({ data, accessToken }) {
     : 'var(--accent)';
 
   // ── Claude API call via Apps Script proxy (avoids CORS) ─────────────────
+  // ── Claude API via Apps Script Execution API (no CORS issues) ──────────────
   async function callClaude(messages) {
-    const proxyUrl = process.env.REACT_APP_PROXY_URL;
-    const secret   = process.env.REACT_APP_PROXY_SECRET;
-    if (!proxyUrl) throw new Error('REACT_APP_PROXY_URL not set in .env');
-
-    const res = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        secret,
-        action: 'estimateNutrition',
-        messages,
-      }),
-    });
-    const json = await res.json();
-    if (json.error) throw new Error(json.error);
-    return json.result;
+    return await estimateNutrition(accessToken, messages);
   }
 
   // ── AI text estimate ──────────────────────────────────────────────────────
