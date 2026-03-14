@@ -373,3 +373,39 @@ export async function estimateNutrition(accessToken, messages) {
   if (json.error) throw new Error(json.error.details?.[0]?.errorMessage || 'Script error');
   return json.response?.result;
 }
+
+// ── Coach Report ──────────────────────────────────────────────────────────────
+export async function fetchCoachReport(accessToken) {
+  try {
+    const rows = await fetchRange(accessToken, 'Coach!A1:B2');
+    return {
+      report:    rows?.[0]?.[1] || null,
+      updatedAt: rows?.[1]?.[1] || null,
+    };
+  } catch {
+    return { report: null, updatedAt: null };
+  }
+}
+
+export async function generateCoachReport(accessToken) {
+  const url = `https://script.googleapis.com/v1/scripts/${DEPLOYMENT_ID}:run`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      function: 'generateCoachReport',
+      parameters: [],
+      devMode: false,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `Script API error: ${res.status}`);
+  }
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.details?.[0]?.errorMessage || 'Script error');
+  return json.response?.result;
+}

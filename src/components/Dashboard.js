@@ -11,6 +11,7 @@ import CaloriesTab from './CaloriesTab';
 import TrackerTab from './TrackerTab';
 import FoodLogTab from './FoodLogTab';
 import BestRidesTab from './BestRidesTab';
+import CoachTab from './CoachTab';
 import StatsTab from './StatsTab';
 
 // Bottom nav tabs (5 core)
@@ -20,6 +21,7 @@ const BOTTOM_TABS = [
   { id: 'stats',     label: 'Stats',   icon: 'stats' },
   { id: 'foodlog',   label: 'Log',     icon: 'log' },
   { id: 'bestrides', label: 'Ranking', icon: 'trophy' },
+  { id: 'coach',     label: 'Coach',   icon: 'coach' },
 ];
 
 // Overflow tabs (topbar / hamburger)
@@ -64,6 +66,14 @@ function NavIcon({ icon, active }) {
       <polyline points="8 21 12 21 16 21"/><line x1="12" y1="17" x2="12" y2="21"/>
       <path d="M7 4H17l-1 7a5 5 0 0 1-10 0z"/>
       <path d="M5 4H3v3a4 4 0 0 0 4 4"/><path d="M19 4h2v3a4 4 0 0 1-4 4"/>
+    </svg>
+  );
+  if (icon === 'coach') return (
+    <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/>
+      <path d="M12 6v6l4 2"/>
+      <path d="M9.5 9a3 3 0 0 1 5 0c0 1.5-1 2.5-2.5 3v1"/>
+      <circle cx="12" cy="17" r="0.5" fill={color}/>
     </svg>
   );
   return null;
@@ -152,7 +162,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   return (
     <div className="dashboard">
       <header className="topbar">
-        <span className="topbar-logo">ThriveMetrics</span>
+        <span className="topbar-logo">LUCAS</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
             <button
@@ -319,6 +329,7 @@ export default function Dashboard({ accessToken, onLogout }) {
             {tab === '108'       && <TrackerTab data={data} />}
             {tab === 'foodlog'   && <FoodLogTab data={data} accessToken={accessToken} />}
             {tab === 'bestrides' && <BestRidesTab data={data} />}
+            {tab === 'coach'     && <CoachTab accessToken={accessToken} />}
           </>
         )}
       </main>
