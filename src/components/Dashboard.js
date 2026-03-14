@@ -10,6 +10,7 @@ import WeightTab from './WeightTab';
 import CaloriesTab from './CaloriesTab';
 import TrackerTab from './TrackerTab';
 import FoodLogTab from './FoodLogTab';
+import BestRidesTab from './BestRidesTab';
 
 const TABS = [
   { id: 'overview',  label: 'Overview' },
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'calories',  label: 'Calories' },
   { id: '108',       label: '10-8 Tracker' },
   { id: 'foodlog',   label: 'Log Meal' },
+  { id: 'bestrides', label: 'Best Rides' },
 ];
 
 export default function Dashboard({ accessToken, onLogout }) {
@@ -103,7 +105,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   return (
     <div className="dashboard">
       <header className="topbar">
-        <span className="topbar-logo">THRIVE METRICS</span>
+        <span className="topbar-logo">LUCAS</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
             <button
@@ -231,6 +233,7 @@ export default function Dashboard({ accessToken, onLogout }) {
             {tab === 'calories'  && <CaloriesTab data={data} />}
             {tab === '108'       && <TrackerTab data={data} />}
             {tab === 'foodlog'   && <FoodLogTab data={data} accessToken={accessToken} />}
+            {tab === 'bestrides' && <BestRidesTab data={data} />}
           </>
         )}
       </main>

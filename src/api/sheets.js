@@ -293,3 +293,59 @@ export async function deleteFoodEntry(accessToken, rowIndex) {
   if (!res.ok) throw new Error(`Failed to delete entry: ${res.status}`);
   return await res.json();
 }
+
+// ── Saved Meals ───────────────────────────────────────────────────────────────
+// Sheet: "Saved Meals" — Name | Calories | Protein | Carbs | Fat | Notes
+
+export async function fetchSavedMeals(accessToken) {
+  const rows = await fetchRange(accessToken, 'Saved Meals!A2:F1000');
+  return rows
+    .filter(r => r[0])
+    .map((r, i) => ({
+      rowIndex: i,
+      name:     r[0] || '',
+      calories: toNum(r[1]),
+      protein:  toNum(r[2]),
+      carbs:    toNum(r[3]),
+      fat:      toNum(r[4]),
+      notes:    r[5] || '',
+    }));
+}
+
+export async function saveMeal(accessToken, meal) {
+  // meal: { name, calories, protein, carbs, fat, notes }
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent('Saved Meals!A:F')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      values: [[
+        meal.name,
+        meal.calories || '',
+        meal.protein  || '',
+        meal.carbs    || '',
+        meal.fat      || '',
+        meal.notes    || '',
+      ]],
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to save meal: ${res.status}`);
+  return await res.json();
+}
+
+export async function deleteSavedMeal(accessToken, rowIndex) {
+  const sheetRow = rowIndex + 2;
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent(`Saved Meals!A${sheetRow}:F${sheetRow}`)}:clear`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!res.ok) throw new Error(`Failed to delete saved meal: ${res.status}`);
+  return await res.json();
+}
