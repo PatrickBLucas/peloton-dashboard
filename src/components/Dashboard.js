@@ -1,7 +1,7 @@
 // src/components/Dashboard.js
 import { useState, useEffect, useCallback } from 'react';
 import {
-  fetchWorkouts, fetchFitbitData, fetchWeight, fetch108,
+  fetchWorkouts, fetchFitbitData, fetchWeight, fetch108, fetchFoodLog,
   triggerSync, computeStats, fetchGoalWeight, saveGoalWeight
 } from '../api/sheets';
 import OverviewTab from './OverviewTab';
@@ -96,16 +96,17 @@ export default function Dashboard({ accessToken, onLogout }) {
     try {
       setLoading(true);
       setError(null);
-      const [workouts, fitbit, weight, tracker, fetchedGoal] = await Promise.all([
+      const [workouts, fitbit, weight, tracker, fetchedGoal, foodLog] = await Promise.all([
         fetchWorkouts(accessToken),
         fetchFitbitData(accessToken),
         fetchWeight(accessToken),
         fetch108(accessToken),
         fetchGoalWeight(accessToken),
+        fetchFoodLog(accessToken),
       ]);
       setGoalWeight(fetchedGoal);
-      const stats = computeStats(weight, fitbit, workouts, fetchedGoal);
-      setData({ workouts, fitbit, weight, stats, tracker });
+      const stats = computeStats(weight, fitbit, workouts, fetchedGoal, foodLog);
+      setData({ workouts, fitbit, weight, stats, tracker, foodLog });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -162,7 +163,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   return (
     <div className="dashboard">
       <header className="topbar">
-        <span className="topbar-logo">LUCAS</span>
+        <span className="topbar-logo">THRIVEMETRICS</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
             <button

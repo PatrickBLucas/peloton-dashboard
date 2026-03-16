@@ -140,7 +140,7 @@ function getAge() {
 
 function lbsToKg(lbs) { return lbs * 0.453592; }
 
-export function computeStats(weightEntries, fitbitData, workouts, goalWeight = GOAL_WEIGHT) {
+export function computeStats(weightEntries, fitbitData, workouts, goalWeight = GOAL_WEIGHT, foodLog = []) {
   const latestWeight = weightEntries.filter(w => w.weight).slice(-1)[0];
   const startWeight = weightEntries.filter(w => w.weight)[0];
   const currentWeightLbs = latestWeight?.weight ?? null;
@@ -177,6 +177,17 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
 
   const totalMinutes = workouts.reduce((s, w) => s + (w.durationMin || 0), 0);
 
+  // Calories consumed: prefer Food Log entries over Fitbit (which only reflects Fitbit-logged food)
+  const todayFoodCals = foodLog
+    .filter(e => e.date === todayStr)
+    .reduce((s, e) => s + (e.calories || 0), 0);
+  const yesterdayFoodCals = foodLog
+    .filter(e => e.date === yesterdayStr)
+    .reduce((s, e) => s + (e.calories || 0), 0);
+
+  const todayConsumed   = todayFoodCals     || todayData?.caloriesConsumed     || null;
+  const yesterdayConsumed = yesterdayFoodCals || yesterdayData?.caloriesConsumed || null;
+
   return {
     bmr,
     tdee,
@@ -187,10 +198,10 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
     poundsToGo,
     rides: workouts.length,
     todayBurned: todayData?.caloriesOut ?? null,
-    todayConsumed: todayData?.caloriesConsumed ?? null,
+    todayConsumed,
     todaySteps: todayData?.steps ?? null,
     yesterdayBurned: yesterdayData?.caloriesOut ?? null,
-    yesterdayConsumed: yesterdayData?.caloriesConsumed ?? null,
+    yesterdayConsumed,
     yesterdaySteps: yesterdayData?.steps ?? null,
     totalMinutes,
   };
