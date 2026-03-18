@@ -128,7 +128,7 @@ export default function WorkoutsTab({ data }) {
           <div className="chart-title">HR Zones — Last 20 Rides (min)</div>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={hrZoneChart} barSize={8} barGap={1}>
-              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "var(--text2)" }} tickLine={false} axisLine={false} interval={0} angle={-45} textAnchor="end" height={40} />
               <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={28} />
               <Tooltip {...tooltipStyle} formatter={(v, name) => [`${v} min`, name]} />
               <Bar dataKey="Z1" stackId="z" fill="#4a90d9" />
@@ -152,7 +152,7 @@ export default function WorkoutsTab({ data }) {
           <div className="chart-title">Output — Last 20 Rides (kJ)</div>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={outputChart} barSize={10}>
-              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "var(--text2)" }} tickLine={false} axisLine={false} interval={0} angle={-45} textAnchor="end" height={40} />
               <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={32} />
               <Tooltip {...tooltipStyle} formatter={(v) => [`${v} kJ`, 'Output']} />
               <Bar dataKey="kJ" fill="var(--accent)" radius={[2, 2, 0, 0]} />

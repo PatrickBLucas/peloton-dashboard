@@ -138,7 +138,7 @@ export default function OverviewTab({ data }) {
         <StatCard
           label="TDEE"
           value={stats.tdee ? stats.tdee.toLocaleString() : '--'}
-          sub="moderate activity"
+          sub={stats.activityLevel ? `${stats.activityLevel} (×${stats.activityFactor?.toFixed(2)})` : 'moderate activity'}
         />
         <StatCard
           label="Total Activities"

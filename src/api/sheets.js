@@ -148,10 +148,52 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
 
   let bmr = null;
   let tdee = null;
+  let activityFactor = 1.55;
+  let activityLevel = 'Moderate';
+
   if (currentWeightLbs) {
     const kg = lbsToKg(currentWeightLbs);
     bmr = Math.round((10 * kg) + (6.25 * HEIGHT_CM) - (5 * age) + 5);
-    tdee = Math.round(bmr * 1.55); // moderate activity
+
+    // Dynamic activity factor based on last 7 days of Fitbit + Peloton data
+    const now = new Date();
+    const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const recentFitbit = fitbitData.filter(d => d.date >= sevenDaysAgo);
+
+    const avgSteps = recentFitbit.length > 0
+      ? recentFitbit.reduce((s, d) => s + (d.steps || 0), 0) / recentFitbit.length
+      : 0;
+    const avgActiveMin = recentFitbit.length > 0
+      ? recentFitbit.reduce((s, d) => s + (d.veryActiveMin || 0) + (d.fairlyActiveMin || 0), 0) / recentFitbit.length
+      : 0;
+    const recentRides = workouts.filter(w => w.type === 'cycling' && w.date >= sevenDaysAgo).length;
+
+    // Activity scoring: steps + active minutes + rides
+    // Sedentary:    <5k steps, <15 active min, 0 rides
+    // Light:        5k-7.5k steps, 15-30 active min, 0-1 rides
+    // Moderate:     7.5k-10k steps, 30-45 active min, 2-3 rides
+    // Active:       10k-12.5k steps, 45-60 active min, 3-4 rides
+    // Very Active:  >12.5k steps, >60 active min, 4+ rides
+    let score = 0;
+    if (avgSteps >= 12500) score += 3;
+    else if (avgSteps >= 10000) score += 2;
+    else if (avgSteps >= 7500) score += 1;
+
+    if (avgActiveMin >= 60) score += 3;
+    else if (avgActiveMin >= 45) score += 2;
+    else if (avgActiveMin >= 30) score += 1;
+
+    if (recentRides >= 4) score += 3;
+    else if (recentRides >= 3) score += 2;
+    else if (recentRides >= 2) score += 1;
+
+    if (score >= 7) { activityFactor = 1.725; activityLevel = 'Very Active'; }
+    else if (score >= 5) { activityFactor = 1.65;  activityLevel = 'Active'; }
+    else if (score >= 3) { activityFactor = 1.55;  activityLevel = 'Moderate'; }
+    else if (score >= 1) { activityFactor = 1.375; activityLevel = 'Light'; }
+    else                 { activityFactor = 1.2;   activityLevel = 'Sedentary'; }
+
+    tdee = Math.round(bmr * activityFactor);
   }
 
   const weightLost = (startWeight && latestWeight)
@@ -191,6 +233,8 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
   return {
     bmr,
     tdee,
+    activityFactor,
+    activityLevel,
     age,
     goalWeight: goalWeight,
     currentWeight: currentWeightLbs,

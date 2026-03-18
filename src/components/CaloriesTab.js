@@ -7,7 +7,22 @@ import {
 } from 'recharts';
 
 export default function CaloriesTab({ data }) {
-  const { fitbit } = data;
+  const { fitbit, foodLog = [], stats } = data;
+
+  // Build food log lookup by date string
+  const foodByDate = useMemo(() => {
+    const map = {};
+    (foodLog || []).forEach(e => {
+      if (!e.date) return;
+      if (!map[e.date]) map[e.date] = { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 };
+      map[e.date].calories += e.calories || 0;
+      map[e.date].protein  += e.protein  || 0;
+      map[e.date].carbs    += e.carbs    || 0;
+      map[e.date].fat      += e.fat      || 0;
+      map[e.date].count++;
+    });
+    return map;
+  }, [foodLog]);
 
   // Last 30 days of calorie data
   const last30 = useMemo(() => {
@@ -15,19 +30,26 @@ export default function CaloriesTab({ data }) {
     return fitbit
       .filter(d => d.date >= cutoff)
       .sort((a, b) => a.date - b.date)
-      .map(d => ({
-        date: format(d.date, 'MMM d'),
-        burned: d.caloriesOut ? Math.round(d.caloriesOut) : null,
-        consumed: d.caloriesConsumed ? Math.round(d.caloriesConsumed) : null,
-        net: (d.caloriesConsumed && d.caloriesOut)
-          ? Math.round(d.caloriesConsumed - d.caloriesOut)
-          : null,
-        steps: d.steps,
-        protein: d.protein,
-        carbs: d.carbs,
-        fat: d.fat,
-      }));
-  }, [fitbit]);
+      .map(d => {
+        const dateStr = format(d.date, 'yyyy-MM-dd');
+        const food = foodByDate[dateStr];
+        // Prefer Food Log data, fall back to Fitbit consumed
+        const consumed = food ? Math.round(food.calories) : (d.caloriesConsumed ? Math.round(d.caloriesConsumed) : null);
+        const protein  = food ? Math.round(food.protein)  : (d.protein  || null);
+        const carbs    = food ? Math.round(food.carbs)    : (d.carbs    || null);
+        const fat      = food ? Math.round(food.fat)      : (d.fat      || null);
+        return {
+          date: format(d.date, 'MMM d'),
+          burned: d.caloriesOut ? Math.round(d.caloriesOut) : null,
+          consumed,
+          net: (consumed && d.caloriesOut) ? Math.round(consumed - d.caloriesOut) : null,
+          steps: d.steps,
+          protein,
+          carbs,
+          fat,
+        };
+      });
+  }, [fitbit, foodByDate]);
 
   // Averages
   const avgBurned = useMemo(() => {
