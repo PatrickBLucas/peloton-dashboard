@@ -1,22 +1,25 @@
 // src/App.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import Dashboard from './components/Dashboard';
 import './App.css';
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+const SCOPE = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects';
+// Refresh token 10 minutes before expiry
+const REFRESH_BUFFER_MS = 10 * 60 * 1000;
 
 function LoginScreen({ onLogin }) {
   const login = useGoogleLogin({
     onSuccess: onLogin,
-    scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects',
+    scope: SCOPE,
   });
 
   return (
     <div className="login-screen">
       <div className="login-card">
         <div className="login-logo">
-          <span className="logo-text">Thrive Metrics</span>
+          <span className="logo-text">ThriveMetrics</span>
         </div>
         <p className="login-tagline">Your training. Your data. Your progress.</p>
         <button className="login-btn" onClick={() => login()}>
@@ -43,23 +46,65 @@ function LoginScreen({ onLogin }) {
 
 function AppInner() {
   const [token, setToken] = useState(() => {
-    const saved = sessionStorage.getItem('gtoken');
-    const expiry = sessionStorage.getItem('gtoken_expiry');
+    const saved  = localStorage.getItem('gtoken');
+    const expiry = localStorage.getItem('gtoken_expiry');
     if (saved && expiry && Date.now() < parseInt(expiry)) return saved;
     return null;
   });
 
+  const refreshTimerRef = useRef(null);
+
+  // Silent token refresh using the implicit flow
+  const silentLogin = useGoogleLogin({
+    onSuccess: (tokenResponse) => {
+      const expiry = Date.now() + (tokenResponse.expires_in * 1000);
+      localStorage.setItem('gtoken', tokenResponse.access_token);
+      localStorage.setItem('gtoken_expiry', expiry.toString());
+      setToken(tokenResponse.access_token);
+      scheduleRefresh(expiry);
+    },
+    onError: () => {
+      // Silent refresh failed — force re-login
+      handleLogout();
+    },
+    scope: SCOPE,
+    prompt: '',  // no prompt = silent refresh
+  });
+
+  const scheduleRefresh = useCallback((expiry) => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    const delay = expiry - Date.now() - REFRESH_BUFFER_MS;
+    if (delay > 0) {
+      refreshTimerRef.current = setTimeout(() => {
+        silentLogin();
+      }, delay);
+    }
+  }, [silentLogin]);
+
   const handleLogin = useCallback((tokenResponse) => {
     const expiry = Date.now() + (tokenResponse.expires_in * 1000);
-    sessionStorage.setItem('gtoken', tokenResponse.access_token);
-    sessionStorage.setItem('gtoken_expiry', expiry.toString());
+    localStorage.setItem('gtoken', tokenResponse.access_token);
+    localStorage.setItem('gtoken_expiry', expiry.toString());
     setToken(tokenResponse.access_token);
-  }, []);
+    scheduleRefresh(expiry);
+  }, [scheduleRefresh]);
 
   const handleLogout = useCallback(() => {
-    sessionStorage.removeItem('gtoken');
-    sessionStorage.removeItem('gtoken_expiry');
+    localStorage.removeItem('gtoken');
+    localStorage.removeItem('gtoken_expiry');
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     setToken(null);
+  }, []);
+
+  // On mount, schedule refresh for existing token
+  useEffect(() => {
+    const expiry = localStorage.getItem('gtoken_expiry');
+    if (token && expiry) {
+      scheduleRefresh(parseInt(expiry));
+    }
+    return () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
   }, []);
 
   if (!token) return <LoginScreen onLogin={handleLogin} />;

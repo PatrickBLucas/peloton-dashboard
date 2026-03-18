@@ -70,10 +70,12 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 24px;
-  padding: 60px 48px;
+  padding: 48px 32px;
   border: 1px solid var(--border);
   background: var(--bg2);
   border-radius: var(--radius-lg);
+  width: min(400px, calc(100vw - 48px));
+  box-sizing: border-box;
 }
 
 .login-logo {
@@ -85,9 +87,10 @@ body {
 
 .logo-text {
   font-family: var(--font-display);
-  font-size: 72px;
-  letter-spacing: 0.1em;
+  font-size: clamp(32px, 10vw, 64px);
+  letter-spacing: 0.08em;
   color: var(--accent);
+  text-align: center;
 }
 
 .logo-sub {

@@ -251,7 +251,8 @@ export async function fetchFoodLog(accessToken) {
   const rows = await fetchRange(accessToken, 'Food Log!A2:H1000');
   return rows
     .filter(r => r[0])
-    .map(r => ({
+    .map((r, i) => ({
+      rowIndex:    i,  // original 0-based index in full sheet (row = i + 2)
       date:        r[0] || '',
       time:        r[1] || '',
       description: r[2] || '',
@@ -409,6 +410,30 @@ export async function generateCoachReport(accessToken) {
     body: JSON.stringify({
       function: 'generateCoachReport',
       parameters: [],
+      devMode: false,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `Script API error: ${res.status}`);
+  }
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.details?.[0]?.errorMessage || 'Script error');
+  return json.response?.result;
+}
+
+// ── Save Peloton tokens via Execution API ─────────────────────────────────────
+export async function savePelotonTokens(accessToken, pelotonAccessToken, pelotonRefreshToken) {
+  const url = `https://script.googleapis.com/v1/scripts/${DEPLOYMENT_ID}:run`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      function: 'saveTokens',
+      parameters: [pelotonAccessToken, pelotonRefreshToken],
       devMode: false,
     }),
   });
