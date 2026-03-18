@@ -249,10 +249,12 @@ export async function fetch108(accessToken) {
 
 export async function fetchFoodLog(accessToken) {
   const rows = await fetchRange(accessToken, 'Food Log!A2:H1000');
+  // Keep track of actual sheet position (row 2 = index 0, row 3 = index 1, etc.)
   return rows
-    .filter(r => r[0])
-    .map((r, i) => ({
-      rowIndex:    i,  // original 0-based index in full sheet (row = i + 2)
+    .map((r, i) => ({ r, sheetRow: i + 2 }))  // sheetRow is the actual 1-based row number
+    .filter(({ r }) => r[0] && r[2])           // must have date AND description
+    .map(({ r, sheetRow }) => ({
+      sheetRow,    // actual row number in the sheet (1-based)
       date:        r[0] || '',
       time:        r[1] || '',
       description: r[2] || '',
@@ -290,19 +292,52 @@ export async function appendFoodEntry(accessToken, entry) {
   return await res.json();
 }
 
-export async function deleteFoodEntry(accessToken, rowIndex) {
-  // rowIndex is 0-based from fetched data, sheet row = rowIndex + 2
-  const sheetRow = rowIndex + 2;
-  // Clear the row (Sheets API doesn't have a simple delete row without batchUpdate)
-  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent(`Food Log!A${sheetRow}:H${sheetRow}`)}:clear`;
+export async function deleteFoodEntry(accessToken, sheetRow) {
+  // sheetRow is the actual 1-based row number in the sheet
+
+  // Get the numeric sheet ID for the Food Log tab
+  const metaUrl = `${BASE_URL}/${SHEET_ID}?fields=sheets.properties`;
+  const metaRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const meta = await metaRes.json();
+  const foodLogSheet = meta.sheets?.find(s => s.properties?.title === 'Food Log');
+  if (!foodLogSheet) throw new Error('Food Log sheet not found');
+
+  // sheetId can be 0 for the first sheet — use nullish check not falsy
+  const numericSheetId = foodLogSheet.properties.sheetId ?? null;
+  if (numericSheetId === null) throw new Error('Could not read Food Log sheet ID');
+
+  const startIndex = sheetRow - 1;  // batchUpdate is 0-based
+  const endIndex   = sheetRow;
+
+  if (!sheetRow || isNaN(startIndex)) throw new Error(`Invalid sheetRow: ${sheetRow}`);
+  console.log('Deleting row:', sheetRow, 'sheetId:', numericSheetId, 'startIndex:', startIndex);
+
+  const url = `${BASE_URL}/${SHEET_ID}:batchUpdate`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId:   numericSheetId,
+            dimension: 'ROWS',
+            startIndex,
+            endIndex,
+          },
+        },
+      }],
+    }),
   });
-  if (!res.ok) throw new Error(`Failed to delete entry: ${res.status}`);
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('batchUpdate error:', err);
+    throw new Error(`Delete failed: ${err.error?.message || res.status}`);
+  }
   return await res.json();
 }
 

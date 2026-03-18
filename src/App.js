@@ -107,6 +107,23 @@ function AppInner() {
     };
   }, []);
 
+  // When app comes back to foreground, check if token needs refresh
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && token) {
+        const expiry = parseInt(localStorage.getItem('gtoken_expiry') || '0');
+        const timeLeft = expiry - Date.now();
+        // If token expires in less than 15 minutes, refresh now
+        if (timeLeft < 15 * 60 * 1000) {
+          silentLogin();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [token, silentLogin]);
+
   if (!token) return <LoginScreen onLogin={handleLogin} />;
   return <Dashboard accessToken={token} onLogout={handleLogout} />;
 }

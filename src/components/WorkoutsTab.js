@@ -40,9 +40,9 @@ export default function WorkoutsTab({ data }) {
 
   const hrZoneChart = useMemo(() => {
     return [...cyclingWorkouts]
-      .filter(w => w.hrZ1 || w.hrZ2 || w.hrZ3 || w.hrZ4 || w.hrZ5)
       .sort((a, b) => (a.date || 0) - (b.date || 0))
-      .slice(-20)
+      .slice(-20)  // take last 20 rides regardless of zone data
+      .filter(w => w.hrZ1 || w.hrZ2 || w.hrZ3 || w.hrZ4 || w.hrZ5)  // only show bars that have data
       .map(w => ({
         date: w.date ? format(w.date, 'M/d') : '',
         Z1: Math.round(w.hrZ1 || 0),

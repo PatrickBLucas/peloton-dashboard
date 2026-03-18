@@ -507,13 +507,14 @@ export default function FoodLogTab({ data, accessToken }) {
 
   // ── Delete entry ──────────────────────────────────────────────────────────
   const handleDelete = useCallback(async (entry) => {
-    try { await deleteFoodEntry(accessToken, entry.rowIndex); await loadEntries(); }
+    console.log('Delete entry:', JSON.stringify(entry));
+    try { await deleteFoodEntry(accessToken, entry.sheetRow); await loadEntries(); }
     catch (e) { showMsg('error', 'Delete failed.'); }
   }, [accessToken, loadEntries]);
 
   // ── Edit entry ────────────────────────────────────────────────────────────
   const startEdit = (idx, entry) => {
-    setEditingEntry(entry.rowIndex);
+    setEditingEntry(entry.sheetRow);
     setEditFields({ description: entry.description, calories: entry.calories, protein: entry.protein, carbs: entry.carbs, fat: entry.fat });
   };
 
@@ -523,7 +524,7 @@ export default function FoodLogTab({ data, accessToken }) {
     try {
       // Delete old row and append updated one
       await deleteFoodEntry(accessToken, editingEntry);
-      const orig = entries.find(e => e.rowIndex === editingEntry);
+      const orig = entries.find(e => e.sheetRow === editingEntry);
       await appendFoodEntry(accessToken, { date: orig.date, time: orig.time, description: editFields.description, calories: toNum(editFields.calories), protein: toNum(editFields.protein), carbs: toNum(editFields.carbs), fat: toNum(editFields.fat), source: orig.source || 'edit' });
       setEditingEntry(null);
       showMsg('success', 'Updated!');
@@ -695,7 +696,7 @@ export default function FoodLogTab({ data, accessToken }) {
           <div style={{ padding: 20, color: 'var(--text3)', fontSize: 13, textAlign: 'center' }}>No entries yet today</div>
         ) : entries.map((e, i) => (
           <div key={i}>
-            {editingEntry === e.rowIndex ? (
+            {editingEntry === e.sheetRow ? (
               <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)' }}>
                 <input value={editFields.description} onChange={ev => setEditFields(f => ({ ...f, description: ev.target.value }))}
                   style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 10px', boxSizing: 'border-box', marginBottom: 8 }} />
@@ -722,7 +723,7 @@ export default function FoodLogTab({ data, accessToken }) {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                  <button onClick={() => startEdit(e.rowIndex, e)} style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✏️</button>
+                  <button onClick={() => startEdit(e.sheetRow, e)} style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✏️</button>
                   <button onClick={() => handleDelete(e)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, padding: '4px 6px' }}>✕</button>
                 </div>
               </div>
