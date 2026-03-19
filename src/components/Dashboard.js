@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   fetchWorkouts, fetchFitbitData, fetchWeight, fetch108, fetchFoodLog,
-  triggerSync, computeStats, fetchGoalWeight, saveGoalWeight
+  triggerSync, computeStats, fetchGoalWeight, saveGoalWeight, savePelotonTokens
 } from '../api/sheets';
 import OverviewTab from './OverviewTab';
 import WorkoutsTab from './WorkoutsTab';
@@ -14,7 +14,6 @@ import BestRidesTab from './BestRidesTab';
 import CoachTab from './CoachTab';
 import StatsTab from './StatsTab';
 
-// Bottom nav tabs (5 core)
 const BOTTOM_TABS = [
   { id: 'overview',  label: 'Home',    icon: 'home' },
   { id: 'workouts',  label: 'Rides',   icon: 'rides' },
@@ -24,14 +23,12 @@ const BOTTOM_TABS = [
   { id: 'coach',     label: 'Coach',   icon: 'coach' },
 ];
 
-// Overflow tabs (topbar / hamburger)
 const OVERFLOW_TABS = [
-  { id: '108',      label: '10-8' },
+  { id: '108', label: '10-8' },
 ];
 
 const TABS = [...BOTTOM_TABS, ...OVERFLOW_TABS];
 
-// SVG icons for bottom nav
 function NavIcon({ icon, active }) {
   const color = active ? 'var(--accent)' : 'var(--text2)';
   const s = { width: 20, height: 20 };
@@ -91,6 +88,7 @@ export default function Dashboard({ accessToken, onLogout }) {
   const [savingGoal, setSavingGoal] = useState(false);
   const [syncing, setSyncing] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -116,6 +114,29 @@ export default function Dashboard({ accessToken, onLogout }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Listen for Peloton reconnect result from the popup
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === 'PELOTON_TOKENS_SAVED') {
+        // Tokens were saved server-side by the Web App — just show success
+        setSyncMsg({ type: 'success', text: 'Peloton reconnected! Tokens saved.' });
+        setTimeout(() => setSyncMsg(null), 4000);
+        setReconnecting(false);
+      } else if (e.data?.type === 'PELOTON_TOKENS_ERROR') {
+        setSyncMsg({ type: 'error', text: `Reconnect failed: ${e.data.error}` });
+        setReconnecting(false);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const handleReconnectPeloton = useCallback(() => {
+    setReconnecting(false); // not a blocking state for this flow
+    const reconnectUrl = `${window.location.origin}/peloton-dashboard/reconnect.html`;
+    window.open(reconnectUrl, 'peloton-reconnect', 'width=400,height=600,left=200,top=100');
+  }, []);
+
   const handleSaveGoal = useCallback(async () => {
     const val = parseFloat(goalInput);
     if (isNaN(val) || val < 50 || val > 500) return;
@@ -124,7 +145,6 @@ export default function Dashboard({ accessToken, onLogout }) {
       await saveGoalWeight(accessToken, val);
       setGoalWeight(val);
       setEditingGoal(false);
-      // Recompute stats with new goal
       if (data) {
         const stats = computeStats(data.weight, data.fitbit, data.workouts, val);
         setData(d => ({ ...d, stats }));
@@ -144,10 +164,7 @@ export default function Dashboard({ accessToken, onLogout }) {
       await triggerSync(accessToken, fnName);
       setSyncMsg({ type: 'success', text: `${type === 'fitbit' ? 'Fitbit' : type === 'peloton' ? 'Peloton' : '10-8 report'} ${type === '108' ? 'sent!' : 'sync started. Reloading in 5s...'}` });
       if (type !== '108') {
-        setTimeout(() => {
-          loadData();
-          setSyncMsg(null);
-        }, 5000);
+        setTimeout(() => { loadData(); setSyncMsg(null); }, 5000);
       } else {
         setTimeout(() => setSyncMsg(null), 4000);
       }
@@ -166,146 +183,87 @@ export default function Dashboard({ accessToken, onLogout }) {
         <span className="topbar-logo">THRIVEMETRICS</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
-            <button
-              key={t.id}
-              className={`nav-btn${tab === t.id ? ' active' : ''}`}
-              onClick={() => setTab(t.id)}
-            >
+            <button key={t.id} className={`nav-btn${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>
               {t.label}
             </button>
           ))}
         </nav>
         <div className="topbar-right">
-          {/* Desktop: inline actions */}
           <div className="topbar-actions desktop-actions">
-          {editingGoal ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="number"
-                value={goalInput}
-                onChange={e => setGoalInput(e.target.value)}
-                placeholder={goalWeight}
-                style={{
-                  width: 70, padding: '5px 8px', background: 'var(--bg3)',
-                  border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
-                  color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-mono)',
-                }}
-                autoFocus
-                onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); if (e.key === 'Escape') setEditingGoal(false); }}
-              />
-              <button className="sync-btn" onClick={handleSaveGoal} disabled={savingGoal}>
-                {savingGoal ? '...' : 'Save'}
+            {editingGoal ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="number" value={goalInput} onChange={e => setGoalInput(e.target.value)} placeholder={goalWeight}
+                  style={{ width: 70, padding: '5px 8px', background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-mono)' }}
+                  autoFocus onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); if (e.key === 'Escape') setEditingGoal(false); }} />
+                <button className="sync-btn" onClick={handleSaveGoal} disabled={savingGoal}>{savingGoal ? '...' : 'Save'}</button>
+                <button className="logout-btn" onClick={() => setEditingGoal(false)}>Cancel</button>
+              </div>
+            ) : (
+              <button className="sync-btn" onClick={() => { setGoalInput(goalWeight.toString()); setEditingGoal(true); }} title="Set goal weight">
+                Goal: {goalWeight} lbs
               </button>
-              <button className="logout-btn" onClick={() => setEditingGoal(false)}>Cancel</button>
-            </div>
-          ) : (
-            <button
-              className="sync-btn"
-              onClick={() => { setGoalInput(goalWeight.toString()); setEditingGoal(true); }}
-              title="Set goal weight"
-            >
-              Goal: {goalWeight} lbs
+            )}
+            <button className="sync-btn" onClick={() => handleSync('108')} disabled={syncing !== null}>{syncing === '108' ? '...' : '📧 10-8'}</button>
+            <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null}>{syncing === 'fitbit' ? '...' : '⟳ Fitbit'}</button>
+            <button className="sync-btn" onClick={() => handleSync('peloton')} disabled={syncing !== null}>{syncing === 'peloton' ? '...' : '⟳ Peloton'}</button>
+            <button className="sync-btn" onClick={handleReconnectPeloton} disabled={reconnecting} title="Reconnect Peloton when sync fails">
+              {reconnecting ? '...' : '🔗 Reconnect'}
             </button>
-          )}
-          <button className="sync-btn" onClick={() => handleSync('108')} disabled={syncing !== null}>
-            {syncing === '108' ? '...' : '📧 10-8'}
-          </button>
-          <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null}>
-            {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
-          </button>
-          <button className="sync-btn" onClick={() => handleSync('peloton')} disabled={syncing !== null}>
-            {syncing === 'peloton' ? '...' : '⟳ Peloton'}
-          </button>
-          {syncTime && <span className="sync-time">loaded {syncTime}</span>}
-          <button className="logout-btn" onClick={onLogout}>Sign out</button>
+            {syncTime && <span className="sync-time">loaded {syncTime}</span>}
+            <button className="logout-btn" onClick={onLogout}>Sign out</button>
           </div>
-          {/* Mobile: overflow tab links */}
           <div className="topbar-overflow-tabs">
             {OVERFLOW_TABS.map(t => (
-              <button
-                key={t.id}
-                className={`overflow-tab-btn${tab === t.id ? ' active' : ''}`}
-                onClick={() => { setTab(t.id); setMenuOpen(false); }}
-              >
+              <button key={t.id} className={`overflow-tab-btn${tab === t.id ? ' active' : ''}`} onClick={() => { setTab(t.id); setMenuOpen(false); }}>
                 {t.label}
               </button>
             ))}
           </div>
-          {/* Mobile: hamburger toggle */}
           <button className="hamburger-btn" onClick={() => setMenuOpen(o => !o)}>
             {menuOpen ? '✕' : '☰'}
           </button>
         </div>
       </header>
 
-      {/* Mobile dropdown menu — outside header so it spans full width */}
       {menuOpen && (
         <div className="mobile-menu">
           {editingGoal ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontSize: 12, color: 'var(--text2)', textAlign: 'center' }}>Set goal weight (lbs)</div>
-              <input
-                type="number"
-                value={goalInput}
-                onChange={e => setGoalInput(e.target.value)}
-                placeholder={goalWeight}
-                style={{
-                  width: '100%', padding: '12px', background: 'var(--bg3)',
-                  border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
-                  color: 'var(--text)', fontSize: 20, fontFamily: 'var(--font-mono)',
-                  textAlign: 'center', boxSizing: 'border-box',
-                }}
-                autoFocus
-                onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); if (e.key === 'Escape') setEditingGoal(false); }}
-              />
+              <input type="number" value={goalInput} onChange={e => setGoalInput(e.target.value)} placeholder={goalWeight}
+                style={{ width: '100%', padding: '12px', background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 20, fontFamily: 'var(--font-mono)', textAlign: 'center', boxSizing: 'border-box' }}
+                autoFocus onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); if (e.key === 'Escape') setEditingGoal(false); }} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="sync-btn" onClick={handleSaveGoal} disabled={savingGoal} style={{ flex: 1, padding: 12 }}>
-                  {savingGoal ? '...' : 'Save'}
-                </button>
+                <button className="sync-btn" onClick={handleSaveGoal} disabled={savingGoal} style={{ flex: 1, padding: 12 }}>{savingGoal ? '...' : 'Save'}</button>
                 <button className="logout-btn" onClick={() => setEditingGoal(false)} style={{ flex: 1, padding: 12 }}>Cancel</button>
               </div>
             </div>
           ) : (
-            <button
-              className="sync-btn"
-              onClick={() => { setGoalInput(goalWeight.toString()); setEditingGoal(true); }}
-            >
+            <button className="sync-btn" onClick={() => { setGoalInput(goalWeight.toString()); setEditingGoal(true); }}>
               Goal: {goalWeight} lbs
             </button>
           )}
-          <button className="sync-btn" onClick={() => { handleSync('108'); setMenuOpen(false); }} disabled={syncing !== null}>
-            {syncing === '108' ? '...' : '📧 10-8'}
-          </button>
-          <button className="sync-btn" onClick={() => { handleSync('fitbit'); setMenuOpen(false); }} disabled={syncing !== null}>
-            {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
-          </button>
-          <button className="sync-btn" onClick={() => { handleSync('peloton'); setMenuOpen(false); }} disabled={syncing !== null}>
-            {syncing === 'peloton' ? '...' : '⟳ Peloton'}
+          <button className="sync-btn" onClick={() => { handleSync('108'); setMenuOpen(false); }} disabled={syncing !== null}>{syncing === '108' ? '...' : '📧 10-8'}</button>
+          <button className="sync-btn" onClick={() => { handleSync('fitbit'); setMenuOpen(false); }} disabled={syncing !== null}>{syncing === 'fitbit' ? '...' : '⟳ Fitbit'}</button>
+          <button className="sync-btn" onClick={() => { handleSync('peloton'); setMenuOpen(false); }} disabled={syncing !== null}>{syncing === 'peloton' ? '...' : '⟳ Peloton'}</button>
+          <button className="sync-btn" onClick={() => { handleReconnectPeloton(); setMenuOpen(false); }} disabled={reconnecting}>
+            {reconnecting ? '...' : '🔗 Reconnect Peloton'}
           </button>
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
           <button className="logout-btn" onClick={onLogout}>Sign out</button>
         </div>
       )}
 
-      {/* Mobile bottom nav */}
       <nav className="bottom-nav">
         {BOTTOM_TABS.map(t => (
-          <button
-            key={t.id}
-            className={`bottom-nav-btn${tab === t.id ? ' active' : ''}`}
-            onClick={() => setTab(t.id)}
-          >
+          <button key={t.id} className={`bottom-nav-btn${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>
             <NavIcon icon={t.icon} active={tab === t.id} />
             <span className="bottom-nav-label">{t.label}</span>
           </button>
         ))}
       </nav>
 
-      {syncMsg && (
-        <div className={`sync-banner ${syncMsg.type}`}>
-          {syncMsg.text}
-        </div>
-      )}
+      {syncMsg && <div className={`sync-banner ${syncMsg.type}`}>{syncMsg.text}</div>}
 
       <main className="main-content">
         {loading && (
