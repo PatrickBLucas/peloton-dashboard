@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/peloton-dashboard/static/css/main.0d73cc93.css",
-    "main.js": "/peloton-dashboard/static/js/main.91c07d9a.js",
+    "main.js": "/peloton-dashboard/static/js/main.ba9333c3.js",
     "index.html": "/peloton-dashboard/index.html",
     "main.0d73cc93.css.map": "/peloton-dashboard/static/css/main.0d73cc93.css.map",
-    "main.91c07d9a.js.map": "/peloton-dashboard/static/js/main.91c07d9a.js.map"
+    "main.ba9333c3.js.map": "/peloton-dashboard/static/js/main.ba9333c3.js.map"
   },
   "entrypoints": [
     "static/css/main.0d73cc93.css",
-    "static/js/main.91c07d9a.js"
+    "static/js/main.ba9333c3.js"
   ]
 }
