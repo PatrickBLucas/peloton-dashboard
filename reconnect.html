@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconnect Peloton</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, sans-serif;
+            background: #1c1f26;
+            color: #f4f5f7;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        h1 {
+            color: #d4f000;
+            font-size: 22px;
+            margin-bottom: 8px;
+            letter-spacing: 0.05em;
+        }
+
+        p {
+            color: #9aa0b0;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            text-align: center;
+            max-width: 320px;
+        }
+
+        .step {
+            background: #252930;
+            border: 1px solid #3a4050;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            width: 100%;
+            max-width: 340px;
+        }
+
+        .step-num {
+            color: #d4f000;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .step-text {
+            color: #f4f5f7;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            max-width: 340px;
+            padding: 16px;
+            background: #d4f000;
+            color: #1c1f26;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-bottom: 10px;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        .btn:active {
+            background: #bfdb00;
+        }
+
+        .btn.secondary {
+            background: #2e333d;
+            color: #f4f5f7;
+        }
+
+        .status {
+            width: 100%;
+            max-width: 340px;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            line-height: 1.5;
+            display: none;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        .success {
+            background: #1a3a1a;
+            border: 1px solid #2a6a2a;
+            color: #7fd67f;
+            display: block;
+        }
+
+        .error {
+            background: #3a1a1a;
+            border: 1px solid #6a2a2a;
+            color: #d67f7f;
+            display: block;
+        }
+
+        .info {
+            background: #1a2a3a;
+            border: 1px solid #2a4a6a;
+            color: #7fafd6;
+            display: block;
+        }
+
+        code {
+            background: #1a1d24;
+            border: 1px solid #3a4050;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 11px;
+            font-family: monospace;
+            display: block;
+            word-break: break-all;
+            color: #d4f000;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>THRIVEMETRICS</h1>
+    <p>Reconnect your Peloton account when tokens expire.</p>
+
+    <div id="status" class="status"></div>
+
+    <div id="steps">
+        <div class="step">
+            <div class="step-num">Step 1</div>
+            <div class="step-text">Open Peloton and log in, then come back here.</div>
+        </div>
+        <a href="https://members.onepeloton.com/login" class="btn" target="_blank">Open Peloton Login</a>
+
+        <div class="step">
+            <div class="step-num">Step 2</div>
+            <div class="step-text">After logging in, tap below to capture and save your tokens automatically.</div>
+        </div>
+        <button class="btn" onclick="captureAndSave()">Capture &amp; Save Tokens</button>
+    </div>
+
+    <script>
+        const PELO_KEY = '@@auth0spajs@@::WVoJxVDdPoFx4RNewvvg6ch2mZ7bwnsM::https://api.onepeloton.com/::openid offline_access';
+        const GOOGLE_KEY = 'gtoken';
+        const DEPLOYMENT_ID = 'AKfycbzOR3mrCPG5jBUB4MOQz0LXZ_qrnialOk1RB5R7_mfRdYf4ce5ggzNUE2IjvR36fSx0';
+
+        function showStatus(type, msg) {
+            const el = document.getElementById('status');
+            el.className = 'status ' + type;
+            el.innerHTML = msg;
+        }
+
+        async function captureAndSave() {
+            showStatus('info', 'Reading tokens...');
+
+            // Get Peloton tokens from localStorage
+            let pelotonTokens;
+            try {
+                const raw = localStorage.getItem(PELO_KEY);
+                if (!raw) throw new Error('Not found');
+                const data = JSON.parse(raw);
+                pelotonTokens = {
+                    access: data.body?.access_token,
+                    refresh: data.body?.refresh_token,
+                };
+                if (!pelotonTokens.access) throw new Error('Access token missing');
+            } catch (e) {
+                // We're on GitHub Pages, not Peloton — can't read Peloton's localStorage directly
+                // Instead show the bookmarklet instructions
+                showBookmarkletInstructions();
+                return;
+            }
+
+            // Get Google OAuth token from ThriveMetrics localStorage
+            const googleToken = localStorage.getItem(GOOGLE_KEY);
+            if (!googleToken) {
+                showStatus('error', 'Not logged into ThriveMetrics. Open ThriveMetrics first, then come back here.');
+                return;
+            }
+
+            showStatus('info', 'Saving tokens to Apps Script...');
+
+            try {
+                const res = await fetch(`https://script.googleapis.com/v1/scripts/${DEPLOYMENT_ID}:run`, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${googleToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        function: 'saveTokens',
+                        parameters: [pelotonTokens.access, pelotonTokens.refresh],
+                        devMode: false,
+                    }),
+                });
+                const json = await res.json();
+                if (json.error) throw new Error(json.error.details?.[0]?.errorMessage || json.error.message);
+                showStatus('success', '✓ Peloton reconnected! Tokens saved. You can close this page.');
+                if (window.opener) window.opener.postMessage({ type: 'PELOTON_TOKENS_SAVED' }, '*');
+            } catch (e) {
+                showStatus('error', 'Failed to save: ' + e.message);
+            }
+        }
+
+        function showBookmarkletInstructions() {
+            // Since we're on GitHub Pages and can't read Peloton localStorage directly,
+            // generate a bookmarklet the user can run from the Peloton tab
+            const googleToken = localStorage.getItem(GOOGLE_KEY) || '';
+            const deploymentId = DEPLOYMENT_ID;
+
+            const bookmarkletCode = `javascript:(function(){
+    const k='${PELO_KEY}';
+    const d=JSON.parse(localStorage.getItem(k)||'{}');
+    const a=d.body?.access_token;
+    const r=d.body?.refresh_token;
+    if(!a){alert('Not logged into Peloton!');return;}
+    fetch('https://script.googleapis.com/v1/scripts/${DEPLOYMENT_ID}:run',{
+      method:'POST',
+      headers:{'Authorization':'Bearer ${googleToken}','Content-Type':'application/json'},
+      body:JSON.stringify({function:'saveTokens',parameters:[a,r],devMode:false})
+    }).then(r=>r.json()).then(j=>{
+      if(j.error)throw new Error(j.error.message);
+      alert('Peloton tokens saved!');
+    }).catch(e=>alert('Error: '+e.message));
+  })()`.replace(/\n\s*/g, '');
+
+            document.getElementById('steps').innerHTML = `
+    <div class="step">
+      <div class="step-num">How to use</div>
+      <div class="step-text">
+        This page can't read Peloton's tokens directly due to browser security.<br><br>
+        Instead, add this bookmarklet to your browser. When Peloton tokens expire, 
+        just log into Peloton and tap the bookmarklet — tokens save automatically.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">Add Bookmarklet</div>
+      <div class="step-text">
+        On desktop: drag the button below to your bookmarks bar.<br><br>
+        On mobile: copy the code below, create a new bookmark manually, and paste it as the URL.
+      </div>
+    </div>
+    <a href="${bookmarkletCode}" class="btn" id="bookmarklet-btn">⭐ Save Peloton Tokens</a>
+    <div class="step">
+      <div class="step-num">Bookmarklet Code</div>
+      <div class="step-text">Copy this and use it as the URL of a new bookmark:</div>
+      <code id="bm-code">${bookmarkletCode.replace(/</g, '&lt;')}</code>
+    </div>
+    <button class="btn secondary" onclick="copyBookmarklet()">Copy Bookmarklet Code</button>
+  `;
+            showStatus('info', 'See instructions below to set up your bookmarklet.');
+        }
+
+        function copyBookmarklet() {
+            const code = document.getElementById('bm-code').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                showStatus('success', '✓ Copied! Create a new bookmark and paste this as the URL.');
+            }).catch(() => {
+                showStatus('info', 'Select and copy the code manually from the box above.');
+            });
+        }
+    </script>
+</body>
+
+</html>
