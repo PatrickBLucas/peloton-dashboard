@@ -6,14 +6,10 @@ import './App.css';
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 const SCOPE = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects';
-// Refresh token 10 minutes before expiry
-const REFRESH_BUFFER_MS = 10 * 60 * 1000;
+const REFRESH_BUFFER_MS = 10 * 60 * 1000; // refresh 10 min before expiry
 
-function LoginScreen({ onLogin }) {
-  const login = useGoogleLogin({
-    onSuccess: onLogin,
-    scope: SCOPE,
-  });
+function LoginScreen({ onLogin, expired = false }) {
+  const login = useGoogleLogin({ onSuccess: onLogin, scope: SCOPE });
 
   return (
     <div className="login-screen">
@@ -21,7 +17,13 @@ function LoginScreen({ onLogin }) {
         <div className="login-logo">
           <span className="logo-text">ThriveMetrics</span>
         </div>
-        <p className="login-tagline">Your training. Your data. Your progress.</p>
+        {expired ? (
+          <p className="login-tagline" style={{ color: 'var(--accent)', fontSize: 15 }}>
+            Session expired — tap below to sign back in.
+          </p>
+        ) : (
+          <p className="login-tagline">Your training. Your data. Your progress.</p>
+        )}
         <button className="login-btn" onClick={() => login()}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -29,7 +31,7 @@ function LoginScreen({ onLogin }) {
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
           </svg>
-          Sign in with Google
+          {expired ? 'Sign back in' : 'Sign in with Google'}
         </button>
         <p className="login-note">Only you can access this dashboard</p>
       </div>
@@ -51,33 +53,38 @@ function AppInner() {
     if (saved && expiry && Date.now() < parseInt(expiry)) return saved;
     return null;
   });
-
+  const [expired, setExpired] = useState(false);
   const refreshTimerRef = useRef(null);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
 
-  // Silent token refresh using the implicit flow
+  const handleLogout = useCallback((isExpired = false) => {
+    localStorage.removeItem('gtoken');
+    localStorage.removeItem('gtoken_expiry');
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    setToken(null);
+    setExpired(isExpired);
+  }, []);
+
   const silentLogin = useGoogleLogin({
     onSuccess: (tokenResponse) => {
       const expiry = Date.now() + (tokenResponse.expires_in * 1000);
       localStorage.setItem('gtoken', tokenResponse.access_token);
       localStorage.setItem('gtoken_expiry', expiry.toString());
       setToken(tokenResponse.access_token);
+      setExpired(false);
       scheduleRefresh(expiry);
     },
-    onError: () => {
-      // Silent refresh failed — force re-login
-      handleLogout();
-    },
+    onError: () => handleLogout(true),
     scope: SCOPE,
-    prompt: '',  // no prompt = silent refresh
+    prompt: '',
   });
 
   const scheduleRefresh = useCallback((expiry) => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     const delay = expiry - Date.now() - REFRESH_BUFFER_MS;
     if (delay > 0) {
-      refreshTimerRef.current = setTimeout(() => {
-        silentLogin();
-      }, delay);
+      refreshTimerRef.current = setTimeout(() => silentLogin(), delay);
     }
   }, [silentLogin]);
 
@@ -86,45 +93,51 @@ function AppInner() {
     localStorage.setItem('gtoken', tokenResponse.access_token);
     localStorage.setItem('gtoken_expiry', expiry.toString());
     setToken(tokenResponse.access_token);
+    setExpired(false);
     scheduleRefresh(expiry);
   }, [scheduleRefresh]);
 
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem('gtoken');
-    localStorage.removeItem('gtoken_expiry');
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    setToken(null);
-  }, []);
+  // Check token validity and refresh proactively
+  const ensureFreshToken = useCallback(() => {
+    const expiry = parseInt(localStorage.getItem('gtoken_expiry') || '0');
+    const timeLeft = expiry - Date.now();
+    if (timeLeft < REFRESH_BUFFER_MS) {
+      silentLogin();
+    }
+  }, [silentLogin]);
 
   // On mount, schedule refresh for existing token
   useEffect(() => {
     const expiry = localStorage.getItem('gtoken_expiry');
-    if (token && expiry) {
-      scheduleRefresh(parseInt(expiry));
-    }
-    return () => {
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    };
+    if (token && expiry) scheduleRefresh(parseInt(expiry));
+    return () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); };
   }, []);
 
-  // When app comes back to foreground, check if token needs refresh
+  // Refresh when app comes back to foreground
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && token) {
-        const expiry = parseInt(localStorage.getItem('gtoken_expiry') || '0');
-        const timeLeft = expiry - Date.now();
-        // If token expires in less than 15 minutes, refresh now
-        if (timeLeft < 15 * 60 * 1000) {
-          silentLogin();
-        }
+      if (document.visibilityState === 'visible' && tokenRef.current) {
+        ensureFreshToken();
       }
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [token, silentLogin]);
+  }, [ensureFreshToken]);
 
-  if (!token) return <LoginScreen onLogin={handleLogin} />;
+  // Catch 401 errors app-wide and show expired screen
+  useEffect(() => {
+    const origFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const res = await origFetch(...args);
+      if (res.status === 401 && tokenRef.current) {
+        handleLogout(true);
+      }
+      return res;
+    };
+    return () => { window.fetch = origFetch; };
+  }, [handleLogout]);
+
+  if (!token) return <LoginScreen onLogin={handleLogin} expired={expired} />;
   return <Dashboard accessToken={token} onLogout={handleLogout} />;
 }
 
