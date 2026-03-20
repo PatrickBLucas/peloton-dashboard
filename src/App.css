@@ -857,3 +857,9 @@ body {
   border-radius: var(--radius) !important;
   font-size: 12px !important;
 }
+
+@media (max-width: 640px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}

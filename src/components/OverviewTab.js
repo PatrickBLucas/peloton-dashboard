@@ -158,7 +158,7 @@ export default function OverviewTab({ data }) {
           <div className="chart-title">Activity — Last 20 Sessions (minutes)</div>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={activityChart} barSize={12}>
-              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={0} angle={-45} textAnchor="end" height={40} />
               <YAxis hide />
               <Tooltip
                 contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
@@ -182,7 +182,7 @@ export default function OverviewTab({ data }) {
                     <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "var(--text2)" }} tickLine={false} axisLine={false} interval={0} angle={-45} textAnchor="end" height={40} />
                 <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={40} />
                 <Tooltip
                   contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
