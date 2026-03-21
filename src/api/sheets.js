@@ -524,3 +524,172 @@ export async function savePelotonTokens(accessToken, pelotonAccessToken, peloton
   if (json.error) throw new Error(json.error.details?.[0]?.errorMessage || 'Script error');
   return json.response?.result;
 }
+
+// ── Food Items ────────────────────────────────────────────────────────────────
+// Sheet: "Food Items" — Name | Unit | Calories | Protein | Carbs | Fat | FdcId
+
+export async function fetchFoodItems(accessToken) {
+  const rows = await fetchRange(accessToken, 'Food Items!A2:G1000');
+  return rows
+    .filter(r => r[0])
+    .map((r, i) => ({
+      rowIndex: i,
+      name:     r[0] || '',
+      unit:     r[1] || '',
+      calories: toNum(r[2]) || 0,
+      protein:  toNum(r[3]) || 0,
+      carbs:    toNum(r[4]) || 0,
+      fat:      toNum(r[5]) || 0,
+      fdcId:    r[6] || '',
+    }));
+}
+
+export async function saveFoodItem(accessToken, item) {
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent('Food Items!A:G')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [[
+      item.name, item.unit, item.calories, item.protein, item.carbs, item.fat, item.fdcId || ''
+    ]] }),
+  });
+  if (!res.ok) throw new Error(`Failed to save food item: ${res.status}`);
+  return await res.json();
+}
+
+export async function deleteFoodItem(accessToken, rowIndex) {
+  const metaUrl = `${BASE_URL}/${SHEET_ID}?fields=sheets.properties`;
+  const metaRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const meta = await metaRes.json();
+  const sheet = meta.sheets?.find(s => s.properties?.title === 'Food Items');
+  if (!sheet) throw new Error('Food Items sheet not found');
+  const numericSheetId = sheet.properties.sheetId;
+  const sheetRow = rowIndex + 2;
+  const url = `${BASE_URL}/${SHEET_ID}:batchUpdate`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ deleteDimension: { range: {
+      sheetId: numericSheetId, dimension: 'ROWS',
+      startIndex: sheetRow - 1, endIndex: sheetRow,
+    }}}] }),
+  });
+  if (!res.ok) throw new Error(`Failed to delete food item: ${res.status}`);
+  return await res.json();
+}
+
+// ── Meal Templates ────────────────────────────────────────────────────────────
+// Sheet: "Meal Templates" — Name | JSON (template definition)
+
+export async function fetchMealTemplates(accessToken) {
+  const rows = await fetchRange(accessToken, 'Meal Templates!A2:B1000');
+  return rows
+    .filter(r => r[0] && r[1])
+    .map((r, i) => {
+      try {
+        return { rowIndex: i, name: r[0], ...JSON.parse(r[1]) };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+export async function saveMealTemplate(accessToken, template) {
+  const { name, ...rest } = template;
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent('Meal Templates!A:B')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [[name, JSON.stringify(rest)]] }),
+  });
+  if (!res.ok) throw new Error(`Failed to save template: ${res.status}`);
+  return await res.json();
+}
+
+export async function deleteMealTemplate(accessToken, rowIndex) {
+  const metaUrl = `${BASE_URL}/${SHEET_ID}?fields=sheets.properties`;
+  const metaRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const meta = await metaRes.json();
+  const sheet = meta.sheets?.find(s => s.properties?.title === 'Meal Templates');
+  if (!sheet) throw new Error('Meal Templates sheet not found');
+  const numericSheetId = sheet.properties.sheetId;
+  const sheetRow = rowIndex + 2;
+  const url = `${BASE_URL}/${SHEET_ID}:batchUpdate`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ deleteDimension: { range: {
+      sheetId: numericSheetId, dimension: 'ROWS',
+      startIndex: sheetRow - 1, endIndex: sheetRow,
+    }}}] }),
+  });
+  if (!res.ok) throw new Error(`Failed to delete template: ${res.status}`);
+  return await res.json();
+}
+
+// ── Food Library ──────────────────────────────────────────────────────────────
+// Sheet: "Food Library" — Name | Unit | Cal/Unit | Protein/Unit | Carbs/Unit | Fat/Unit
+
+export async function fetchFoodLibrary(accessToken) {
+  const rows = await fetchRange(accessToken, 'Food Library!A2:F1000');
+  return rows
+    .filter(r => r[0])
+    .map((r, i) => ({
+      rowIndex: i,
+      name:     r[0] || '',
+      unit:     r[1] || '1 serving',
+      calories: toNum(r[2]) || 0,
+      protein:  toNum(r[3]) || 0,
+      carbs:    toNum(r[4]) || 0,
+      fat:      toNum(r[5]) || 0,
+    }));
+}
+
+export async function saveFoodLibraryItem(accessToken, item) {
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent('Food Library!A:F')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [[
+      item.name, item.unit, item.calories, item.protein, item.carbs, item.fat
+    ]] }),
+  });
+  if (!res.ok) throw new Error(`Failed to save food item: ${res.status}`);
+  return await res.json();
+}
+
+export async function deleteFoodLibraryItem(accessToken, rowIndex) {
+  const metaUrl = `${BASE_URL}/${SHEET_ID}?fields=sheets.properties`;
+  const metaRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const meta = await metaRes.json();
+  const sheet = meta.sheets?.find(s => s.properties?.title === 'Food Library');
+  if (!sheet) throw new Error('Food Library sheet not found');
+  const sheetRow = rowIndex + 2;
+  const url = `${BASE_URL}/${SHEET_ID}:batchUpdate`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ deleteDimension: { range: {
+      sheetId: sheet.properties.sheetId, dimension: 'ROWS',
+      startIndex: sheetRow - 1, endIndex: sheetRow,
+    }}}] }),
+  });
+  if (!res.ok) throw new Error(`Failed to delete item: ${res.status}`);
+  return await res.json();
+}
+
+// Update saved meal (overwrite by rowIndex)
+export async function updateSavedMeal(accessToken, rowIndex, meal) {
+  const sheetRow = rowIndex + 2;
+  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent(`Saved Meals!A${sheetRow}:F${sheetRow}`)}?valueInputOption=RAW`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [[
+      meal.name, meal.calories, meal.protein, meal.carbs, meal.fat, meal.notes || ''
+    ]] }),
+  });
+  if (!res.ok) throw new Error(`Failed to update meal: ${res.status}`);
+  return await res.json();
+}

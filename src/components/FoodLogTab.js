@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { appendFoodEntry, deleteFoodEntry, fetchFoodLog, fetchSavedMeals, saveMeal, deleteSavedMeal, estimateNutrition } from '../api/sheets';
+import { appendFoodEntry, deleteFoodEntry, fetchFoodLog, fetchSavedMeals, saveMeal, deleteSavedMeal, estimateNutrition, fetchFoodLibrary, saveFoodLibraryItem, deleteFoodLibraryItem, updateSavedMeal } from '../api/sheets';
 
 function todayStr() {
   const d = new Date();
@@ -149,11 +149,45 @@ function scaleToGrams(item, grams) {
   };
 }
 
+// ── Library Item Row ─────────────────────────────────────────────────────────
+function LibraryItemRow({ item, onAdd, onDelete }) {
+  const [qty, setQty] = useState(1);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>{item.name}</div>
+        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ color: 'var(--accent)' }}>{Math.round(item.calories * qty)} cal</span>
+          {' · '}P:{Math.round(item.protein * qty)}g · C:{Math.round(item.carbs * qty)}g · F:{Math.round(item.fat * qty)}g
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>per {item.unit}</div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <button onClick={() => setQty(q => Math.max(0.25, parseFloat((q - 0.25).toFixed(2))))}
+          style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+        <span style={{ fontSize: 14, fontWeight: 600, minWidth: 28, textAlign: 'center' }}>{qty}</span>
+        <button onClick={() => setQty(q => parseFloat((q + 0.25).toFixed(2)))}
+          style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+        <button className="sync-btn" onClick={() => onAdd(item, qty)} style={{ padding: '6px 12px', fontSize: 12 }}>+ Add</button>
+        {onDelete && (
+          <button onClick={() => onDelete(item.rowIndex)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, padding: '4px' }}>✕</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Meal Builder ──────────────────────────────────────────────────────────────
 function MealBuilder({ accessToken, onLog, onSaveRecipe }) {
   const [ingredients, setIngredients] = useState([]);
   const [mealName, setMealName] = useState('');
-  const [subMode, setSubMode] = useState('search'); // search | barcode | manual
+  const [subMode, setSubMode] = useState('library'); // library | search | barcode | manual
+  const [libraryItems, setLibraryItems] = useState([]);
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [savingToLibrary, setSavingToLibrary] = useState(null); // result being saved
+  const [libItemName, setLibItemName] = useState('');
+  const [libItemUnit, setLibItemUnit] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -172,6 +206,47 @@ function MealBuilder({ accessToken, onLog, onSaveRecipe }) {
   }), [ingredients]);
 
   const showMsg = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3000); };
+
+  useEffect(() => {
+    if (!libraryLoaded) {
+      fetchFoodLibrary(accessToken).then(items => { setLibraryItems(items); setLibraryLoaded(true); }).catch(() => {});
+    }
+  }, [libraryLoaded, accessToken]);
+
+  const addFromLibrary = (item, qty) => {
+    const q = Math.max(0.25, toNum(qty) || 1);
+    addIngredient({
+      description: `${item.name} (${q === 1 ? item.unit : `${q}× ${item.unit}`})`,
+      calories: Math.round(item.calories * q),
+      protein:  Math.round(item.protein  * q),
+      carbs:    Math.round(item.carbs    * q),
+      fat:      Math.round(item.fat      * q),
+      source: 'library',
+    });
+  };
+
+  const handleDeleteLibraryItem = async (rowIndex) => {
+    try {
+      await deleteFoodLibraryItem(accessToken, rowIndex);
+      setLibraryItems(prev => prev.filter(i => i.rowIndex !== rowIndex));
+      showMsg('success', 'Removed from library.');
+    } catch (e) { showMsg('error', e.message); }
+  };
+
+  const handleSaveToLibrary = async () => {
+    if (!savingToLibrary || !libItemName.trim() || !libItemUnit.trim()) return;
+    try {
+      await saveFoodLibraryItem(accessToken, {
+        name: libItemName.trim(), unit: libItemUnit.trim(),
+        calories: savingToLibrary.calories, protein: savingToLibrary.protein,
+        carbs: savingToLibrary.carbs, fat: savingToLibrary.fat,
+      });
+      const items = await fetchFoodLibrary(accessToken);
+      setLibraryItems(items);
+      setSavingToLibrary(null); setLibItemName(''); setLibItemUnit('');
+      showMsg('success', `"${libItemName}" saved to library!`);
+    } catch (e) { showMsg('error', e.message); }
+  };
 
   const addIngredient = (item) => {
     setIngredients(prev => [...prev, { ...item, id: Date.now() }]);
@@ -204,14 +279,17 @@ function MealBuilder({ accessToken, onLog, onSaveRecipe }) {
     }
   };
 
+  const [barcodeResult, setBarcodeResult] = useState(null);
+
   const handleBarcodeDetected = async (barcode) => {
     setScannerOpen(false);
+    setBarcodeResult(null);
     setLookingUp(true);
     try {
       const [offResult, usdaResult] = await Promise.allSettled([lookupBarcode(barcode), lookupUSDABarcode(barcode)]);
       const result = (offResult.status === 'fulfilled' && offResult.value) ? offResult.value :
                      (usdaResult.status === 'fulfilled' && usdaResult.value) ? usdaResult.value : null;
-      if (result) addIngredient(result);
+      if (result) setBarcodeResult(result);
       else showMsg('error', 'Product not found.');
     } catch (e) { showMsg('error', 'Barcode lookup failed.'); }
     finally { setLookingUp(false); }
@@ -260,10 +338,48 @@ function MealBuilder({ accessToken, onLog, onSaveRecipe }) {
 
       {/* Sub-mode selector */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        <SubBtn id="library" label="📚 Library" />
         <SubBtn id="search" label="🔍 Search" />
         <SubBtn id="barcode" label="📦 Barcode" />
         <SubBtn id="manual" label="✏️ Manual" />
       </div>
+
+      {/* Library */}
+      {subMode === 'library' && (
+        <div>
+          <input type="text" value={librarySearch} onChange={e => setLibrarySearch(e.target.value)}
+            placeholder="Filter library..." style={{ ...inputStyle, marginBottom: 10 }} />
+          {libraryItems.length === 0 && libraryLoaded && (
+            <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: 16 }}>
+              Library is empty. Use 🔍 Search to find foods and save them here.
+            </div>
+          )}
+          {libraryItems
+            .filter(i => !librarySearch || i.name.toLowerCase().includes(librarySearch.toLowerCase()))
+            .map((item, idx) => (
+              <LibraryItemRow key={idx} item={item} onAdd={addFromLibrary} onDelete={handleDeleteLibraryItem} />
+            ))}
+          {savingToLibrary && (
+            <div style={{ padding: 14, background: 'var(--bg3)', borderRadius: 'var(--radius)', border: '1px solid var(--accent)', marginTop: 10 }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>{savingToLibrary.description}</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 3 }}>Name in library</div>
+                  <input value={libItemName} onChange={e => setLibItemName(e.target.value)} style={inputStyle} placeholder="e.g. Strawberry" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 3 }}>Unit label</div>
+                  <input value={libItemUnit} onChange={e => setLibItemUnit(e.target.value)} style={inputStyle} placeholder="e.g. 1 berry" />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="sync-btn" onClick={handleSaveToLibrary} disabled={!libItemName.trim() || !libItemUnit.trim()} style={{ flex: 1, padding: 10 }}>Save to Library</button>
+                <button onClick={() => setSavingToLibrary(null)} style={{ padding: '10px 14px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search */}
       {subMode === 'search' && (
@@ -282,7 +398,10 @@ function MealBuilder({ accessToken, onLog, onSaveRecipe }) {
                   <span style={{ color: 'var(--accent)' }}>{r.calories} cal</span> · P:{r.protein}g · C:{r.carbs}g · F:{r.fat}g · per {r.servingG}g
                 </div>
               </div>
-              <button className="sync-btn" onClick={() => addIngredient(r)} style={{ flexShrink: 0, padding: '6px 12px', fontSize: 12, marginLeft: 8 }}>+ Add</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0, marginLeft: 8 }}>
+                <button className="sync-btn" onClick={() => addIngredient(r)} style={{ padding: '6px 12px', fontSize: 12 }}>+ Add</button>
+                <button onClick={() => { setSavingToLibrary(r); setLibItemName(r.description.split(',')[0].trim()); setLibItemUnit(`${r.servingG}g`); setSubMode('library'); }} style={{ padding: '4px 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text3)', cursor: 'pointer', fontSize: 10 }}>📚 Save</button>
+              </div>
             </div>
           ))}
         </div>
@@ -290,11 +409,52 @@ function MealBuilder({ accessToken, onLog, onSaveRecipe }) {
 
       {/* Barcode */}
       {subMode === 'barcode' && (
-        scannerOpen
-          ? <BarcodeScanner onDetected={handleBarcodeDetected} onClose={() => setScannerOpen(false)} />
-          : <button className="sync-btn" onClick={() => setScannerOpen(true)} disabled={lookingUp} style={{ width: '100%', padding: 12 }}>
-              {lookingUp ? 'Looking up...' : '📷 Open Barcode Scanner'}
-            </button>
+        <div>
+          {scannerOpen
+            ? <BarcodeScanner onDetected={handleBarcodeDetected} onClose={() => setScannerOpen(false)} />
+            : <button className="sync-btn" onClick={() => setScannerOpen(true)} disabled={lookingUp} style={{ width: '100%', padding: 12, marginBottom: 12 }}>
+                {lookingUp ? 'Looking up...' : '📷 Open Barcode Scanner'}
+              </button>
+          }
+          {!scannerOpen && (
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>Or enter barcode manually:</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <input
+                  type="text"
+                  placeholder="e.g. 012345678901"
+                  style={{ ...inputStyle, flex: 1, fontFamily: 'var(--font-mono)' }}
+                  onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) handleBarcodeDetected(e.target.value.trim()); }}
+                  id="manual-barcode-input"
+                />
+                <button className="sync-btn" disabled={lookingUp}
+                  onClick={() => {
+                    const val = document.getElementById('manual-barcode-input').value.trim();
+                    if (val) handleBarcodeDetected(val);
+                  }}
+                  style={{ flexShrink: 0, padding: '10px 14px' }}>
+                  {lookingUp ? '...' : 'Look up'}
+                </button>
+              </div>
+              {barcodeResult && (
+                <div style={{ padding: 12, background: 'var(--bg3)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{barcodeResult.description}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', marginBottom: 10 }}>
+                    <span style={{ color: 'var(--accent)' }}>{barcodeResult.calories} cal</span>
+                    {' · '}P:{barcodeResult.protein}g · C:{barcodeResult.carbs}g · F:{barcodeResult.fat}g · per {barcodeResult.servingG}g
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="sync-btn" onClick={() => { addIngredient(barcodeResult); setBarcodeResult(null); }} style={{ flex: 1, padding: 10, fontSize: 13 }}>+ Add</button>
+                    <button onClick={() => { setSavingToLibrary(barcodeResult); setLibItemName(barcodeResult.description.split(',')[0].trim()); setLibItemUnit(`${barcodeResult.servingG}g`); setSubMode('library'); setBarcodeResult(null); }}
+                      style={{ flex: 1, padding: 10, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>
+                      📚 Save to Library
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Manual */}
@@ -378,6 +538,8 @@ export default function FoodLogTab({ data, accessToken }) {
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [saveMealName, setSaveMealName] = useState('');
   const [pendingSave, setPendingSave] = useState(null);
+  const [editingMeal, setEditingMeal] = useState(null); // meal being edited
+  const [editMealFields, setEditMealFields] = useState({});
 
   // Edit mode
   const [editingEntry, setEditingEntry] = useState(null); // { index, entry }
@@ -654,17 +816,47 @@ export default function FoodLogTab({ data, accessToken }) {
             ) : savedMeals.length === 0 ? (
               <div style={{ padding: 20, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>No saved meals yet.</div>
             ) : savedMeals.map((meal, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 3 }}>{meal.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-                    <span style={{ color: 'var(--accent)' }}>{meal.calories} cal</span> · P:{meal.protein}g · C:{meal.carbs}g · F:{meal.fat}g
+              <div key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                {editingMeal === meal.rowIndex ? (
+                  <div style={{ padding: '12px 0' }}>
+                    <input value={editMealFields.name} onChange={e => setEditMealFields(f => ({ ...f, name: e.target.value }))}
+                      style={{ ...inputStyle, marginBottom: 8 }} placeholder="Meal name" />
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginBottom: 8 }}>
+                      {[['calories','Cal'],['protein','Pro'],['carbs','Carb'],['fat','Fat']].map(([k, label]) => (
+                        <div key={k}>
+                          <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
+                          <input type="number" value={editMealFields[k]} onChange={e => setEditMealFields(f => ({ ...f, [k]: e.target.value }))}
+                            style={{ width: '100%', padding: '5px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="sync-btn" onClick={async () => {
+                        try {
+                          await updateSavedMeal(accessToken, meal.rowIndex, { name: editMealFields.name, calories: toNum(editMealFields.calories), protein: toNum(editMealFields.protein), carbs: toNum(editMealFields.carbs), fat: toNum(editMealFields.fat) });
+                          setEditingMeal(null);
+                          loadSavedMeals();
+                          showMsg('success', 'Meal updated!');
+                        } catch (e) { showMsg('error', e.message); }
+                      }} style={{ flex: 1, padding: 8, fontSize: 12 }}>Save</button>
+                      <button className="logout-btn" onClick={() => setEditingMeal(null)} style={{ flex: 1, padding: 8, fontSize: 12 }}>Cancel</button>
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button className="sync-btn" onClick={() => handleSave({ ...meal, description: meal.name, source: 'saved' })} style={{ padding: '6px 12px', fontSize: 12 }}>Log</button>
-                  <button onClick={() => { deleteSavedMeal(accessToken, meal.rowIndex); setSavedMeals(prev => prev.filter((_, j) => j !== i)); }} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, padding: '4px 8px' }}>✕</button>
-                </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 3 }}>{meal.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
+                        <span style={{ color: 'var(--accent)' }}>{meal.calories} cal</span> · P:{meal.protein}g · C:{meal.carbs}g · F:{meal.fat}g
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button className="sync-btn" onClick={() => handleSave({ ...meal, description: meal.name, source: 'saved' })} style={{ padding: '6px 12px', fontSize: 12 }}>Log</button>
+                      <button onClick={() => { setEditingMeal(meal.rowIndex); setEditMealFields({ name: meal.name, calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat }); }} style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✏️</button>
+                      <button onClick={() => { deleteSavedMeal(accessToken, meal.rowIndex); setSavedMeals(prev => prev.filter((_, j) => j !== i)); }} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, padding: '4px 6px' }}>✕</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

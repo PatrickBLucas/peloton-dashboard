@@ -41,11 +41,19 @@ export default function TrackerTab({ data }) {
             <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
               Hours This Month
             </div>
-            <div className="ring-label">
-              {Math.floor(totalHours)}
-              <span style={{ fontSize: 24, color: 'var(--text2)' }}>
-                :{String(Math.round((totalHours % 1) * 60)).padStart(2, '0')}
-              </span>
+            <div className="ring-label" style={{ flexDirection: 'column', gap: 4 }}>
+              <div>
+                <span>{Math.floor(totalHours)}</span>
+                <span style={{ fontSize: 20, color: 'var(--text2)', marginLeft: 6 }}>
+                  {Math.floor(totalHours) === 1 ? 'Hour' : 'Hours'}
+                </span>
+              </div>
+              <div style={{ fontSize: 28 }}>
+                <span>{Math.round((totalHours % 1) * 60)}</span>
+                <span style={{ fontSize: 20, color: 'var(--text2)', marginLeft: 6 }}>
+                  {Math.round((totalHours % 1) * 60) === 1 ? 'Minute' : 'Minutes'}
+                </span>
+              </div>
             </div>
             <div style={{ fontSize: 13, color: 'var(--text2)' }}>of {TARGET_HOURS} hours</div>
 
@@ -68,20 +76,20 @@ export default function TrackerTab({ data }) {
               </div>
             </div>
 
-            <div style={{ marginTop: 20, display: 'flex', gap: 32 }}>
-              <div style={{ textAlign: 'center' }}>
+            <div style={{ marginTop: 20, display: 'flex', gap: 32, alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ textAlign: 'center', minWidth: 80 }}>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 28, color: 'var(--text)' }}>
-                  {Math.round(hoursLeft * 10) / 10}h
+                  {Math.floor(hoursLeft)}h {Math.round((hoursLeft % 1) * 60)}m
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>remaining</div>
               </div>
-              <div style={{ textAlign: 'center' }}>
+              <div style={{ textAlign: 'center', minWidth: 60 }}>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 28, color: 'var(--text)' }}>
                   {daysLeft}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>days left</div>
               </div>
-              <div style={{ textAlign: 'center' }}>
+              <div style={{ textAlign: 'center', minWidth: 60 }}>
                 <div style={{
                   fontFamily: 'var(--font-display)',
                   fontSize: 28,
