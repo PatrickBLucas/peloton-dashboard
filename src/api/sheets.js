@@ -16,10 +16,9 @@ async function fetchRange(accessToken, range) {
 
 function parseDate(val) {
   if (!val) return null;
-  // If it's already a YYYY-MM-DD string, parse without timezone shift
   if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
     const [y, m, d] = val.split('-').map(Number);
-    return new Date(y, m - 1, d); // local time, no UTC shift
+    return new Date(y, m - 1, d);
   }
   const d = new Date(val);
   return isNaN(d) ? null : d;
@@ -31,9 +30,6 @@ function toNum(val) {
 }
 
 // ── Peloton workouts ──────────────────────────────────────────────────────────
-// Columns: Date | Title | Type | Duration(min) | Calories | Output(kJ) |
-//          Avg Cadence | Avg Resistance | HR Z1 | HR Z2 | HR Z3 | HR Z4 | HR Z5 |
-//          Effort Score | Instructor | Workout ID
 export async function fetchWorkouts(accessToken) {
   const rows = await fetchRange(accessToken, 'Peloton!A2:P1000');
   return rows
@@ -60,33 +56,33 @@ export async function fetchWorkouts(accessToken) {
 }
 
 // ── Fitbit daily data ────────────────────────────────────────────────────────
-// Row 4 is header, data starts row 5
-// Col indices (0-based): 0=Date, 2=activityCalories, 3=caloriesBMR, 4=caloriesOut,
-// 6=fairlyActiveMinutes, 8=lightlyActiveMinutes, 11=steps, 12=veryActiveMinutes,
-// 13=bmi, 14=weight, 22=minutesAsleep, 28=timeInBed, 29=calories(food),
-// 30=carbs, 32=fiber, 33=protein
 export async function fetchFitbitData(accessToken) {
   const rows = await fetchRange(accessToken, 'Fitbit Data!A5:AJ1000');
   return rows
     .filter(r => r[0])
     .map(r => ({
-      date: parseDate(r[0]),
+      date:             parseDate(r[0]),
       activityCalories: toNum(r[2]),
-      caloriesBMR: toNum(r[3]),
-      caloriesOut: toNum(r[4]),
-      fairlyActiveMin: toNum(r[6]),
+      caloriesBMR:      toNum(r[3]),
+      caloriesOut:      toNum(r[4]),
+      fairlyActiveMin:  toNum(r[6]),
       lightlyActiveMin: toNum(r[8]),
-      steps: toNum(r[11]),
-      veryActiveMin: toNum(r[12]),
-      bmi: toNum(r[13]),
-      weight: toNum(r[14]),
-      minutesAsleep: toNum(r[22]),
-      timeInBed: toNum(r[28]),
+      steps:            toNum(r[11]),
+      veryActiveMin:    toNum(r[12]),
+      bmi:              toNum(r[13]),
+      weight:           toNum(r[14]),
+      efficiency:       toNum(r[19]),
+      minutesAsleep:    toNum(r[22]),
+      minutesAwake:     toNum(r[23]),
+      minutesToFallAsleep: toNum(r[24]),
+      restlessCount:    toNum(r[25]),
+      restlessDuration: toNum(r[26]),
+      timeInBed:        toNum(r[28]),
       caloriesConsumed: toNum(r[29]),
-      carbs: toNum(r[30]),
-      fat: toNum(r[31]),
-      fiber: toNum(r[32]),
-      protein: toNum(r[33]),
+      carbs:            toNum(r[30]),
+      fat:              toNum(r[31]),
+      fiber:            toNum(r[32]),
+      protein:          toNum(r[33]),
     }))
     .filter(d => d.date);
 }
@@ -124,11 +120,9 @@ export async function saveGoalWeight(accessToken, goalWeight) {
   return await res.json();
 }
 
-
-// Mifflin-St Jeor for men: BMR = (10 × kg) + (6.25 × cm) - (5 × age) + 5
-const HEIGHT_CM = 182.88; // 6 feet
+const HEIGHT_CM = 182.88;
 const BIRTHDAY = new Date('1982-08-25');
-const GOAL_WEIGHT = 180; // fallback default
+const GOAL_WEIGHT = 180;
 
 function getAge() {
   const today = new Date();
@@ -155,7 +149,6 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
     const kg = lbsToKg(currentWeightLbs);
     bmr = Math.round((10 * kg) + (6.25 * HEIGHT_CM) - (5 * age) + 5);
 
-    // Dynamic activity factor based on last 7 days of Fitbit + Peloton data
     const now = new Date();
     const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const recentFitbit = fitbitData.filter(d => d.date >= sevenDaysAgo);
@@ -168,12 +161,6 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
       : 0;
     const recentRides = workouts.filter(w => w.type === 'cycling' && w.date >= sevenDaysAgo).length;
 
-    // Activity scoring: steps + active minutes + rides
-    // Sedentary:    <5k steps, <15 active min, 0 rides
-    // Light:        5k-7.5k steps, 15-30 active min, 0-1 rides
-    // Moderate:     7.5k-10k steps, 30-45 active min, 2-3 rides
-    // Active:       10k-12.5k steps, 45-60 active min, 3-4 rides
-    // Very Active:  >12.5k steps, >60 active min, 4+ rides
     let score = 0;
     if (avgSteps >= 12500) score += 3;
     else if (avgSteps >= 10000) score += 2;
@@ -203,7 +190,6 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
     ? Math.round((currentWeightLbs - goalWeight) * 10) / 10
     : null;
 
-  // Today and yesterday from Fitbit
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const yest = new Date(now); yest.setDate(yest.getDate() - 1);
@@ -219,7 +205,6 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
 
   const totalMinutes = workouts.reduce((s, w) => s + (w.durationMin || 0), 0);
 
-  // Calories consumed: prefer Food Log entries over Fitbit (which only reflects Fitbit-logged food)
   const todayFoodCals = foodLog
     .filter(e => e.date === todayStr)
     .reduce((s, e) => s + (e.calories || 0), 0);
@@ -236,19 +221,45 @@ export function computeStats(weightEntries, fitbitData, workouts, goalWeight = G
     activityFactor,
     activityLevel,
     age,
-    goalWeight: goalWeight,
+    goalWeight,
     currentWeight: currentWeightLbs,
     weightLost,
     poundsToGo,
     rides: workouts.length,
-    todayBurned: todayData?.caloriesOut ?? null,
+    todayBurned:      todayData?.caloriesOut    ?? null,
     todayConsumed,
-    todaySteps: todayData?.steps ?? null,
-    yesterdayBurned: yesterdayData?.caloriesOut ?? null,
+    todaySteps:       todayData?.steps          ?? null,
+    yesterdayBurned:  yesterdayData?.caloriesOut ?? null,
     yesterdayConsumed,
-    yesterdaySteps: yesterdayData?.steps ?? null,
+    yesterdaySteps:   yesterdayData?.steps       ?? null,
     totalMinutes,
   };
+}
+
+// ── Sleep stats (7-day rolling averages) ─────────────────────────────────────
+export function computeSleepStats(fitbitData) {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  // Only include days where Fitbit actually recorded sleep (minutesAsleep > 0)
+  const recent = fitbitData.filter(d => d.date >= sevenDaysAgo && d.minutesAsleep > 0);
+  if (recent.length === 0) return { avgHours: null, avgEfficiency: null, avgRestlessCount: null, sampleDays: 0 };
+
+  const avgMinutesAsleep = recent.reduce((s, d) => s + (d.minutesAsleep || 0), 0) / recent.length;
+  const avgHours = Math.round(avgMinutesAsleep / 60 * 10) / 10;
+
+  const withEfficiency = recent.filter(d => d.efficiency > 0);
+  const avgEfficiency = withEfficiency.length > 0
+    ? Math.round(withEfficiency.reduce((s, d) => s + d.efficiency, 0) / withEfficiency.length)
+    : null;
+
+  const withRestless = recent.filter(d => d.restlessCount !== null);
+  const avgRestlessCount = withRestless.length > 0
+    ? Math.round(withRestless.reduce((s, d) => s + (d.restlessCount || 0), 0) / withRestless.length * 10) / 10
+    : null;
+
+  return { avgHours, avgEfficiency, avgRestlessCount, sampleDays: recent.length };
 }
 
 // ── Apps Script triggers ─────────────────────────────────────────────────────
@@ -263,10 +274,7 @@ export async function triggerSync(accessToken, functionName) {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      function: functionName,
-      devMode: false,
-    }),
+    body: JSON.stringify({ function: functionName, devMode: false }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -289,16 +297,13 @@ export async function fetch108(accessToken) {
 }
 
 // ── Food Log ─────────────────────────────────────────────────────────────────
-// Sheet: "Food Log" — Date | Time | Description | Calories | Protein | Carbs | Fat | Source
-
 export async function fetchFoodLog(accessToken) {
   const rows = await fetchRange(accessToken, 'Food Log!A2:H1000');
-  // Keep track of actual sheet position (row 2 = index 0, row 3 = index 1, etc.)
   return rows
-    .map((r, i) => ({ r, sheetRow: i + 2 }))  // sheetRow is the actual 1-based row number
-    .filter(({ r }) => r[0] && r[2])           // must have date AND description
+    .map((r, i) => ({ r, sheetRow: i + 2 }))
+    .filter(({ r }) => r[0] && r[2])
     .map(({ r, sheetRow }) => ({
-      sheetRow,    // actual row number in the sheet (1-based)
+      sheetRow,
       date:        r[0] || '',
       time:        r[1] || '',
       description: r[2] || '',
@@ -311,72 +316,39 @@ export async function fetchFoodLog(accessToken) {
 }
 
 export async function appendFoodEntry(accessToken, entry) {
-  // entry: { date, time, description, calories, protein, carbs, fat, source }
   const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent('Food Log!A:H')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      values: [[
-        entry.date,
-        entry.time,
-        entry.description,
-        entry.calories || '',
-        entry.protein  || '',
-        entry.carbs    || '',
-        entry.fat      || '',
-        entry.source   || '',
-      ]],
-    }),
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [[
+      entry.date, entry.time, entry.description,
+      entry.calories || '', entry.protein || '', entry.carbs || '', entry.fat || '', entry.source || '',
+    ]] }),
   });
   if (!res.ok) throw new Error(`Failed to log food: ${res.status}`);
   return await res.json();
 }
 
 export async function deleteFoodEntry(accessToken, sheetRow) {
-  // sheetRow is the actual 1-based row number in the sheet
-
-  // Get the numeric sheet ID for the Food Log tab
   const metaUrl = `${BASE_URL}/${SHEET_ID}?fields=sheets.properties`;
   const metaRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
   const meta = await metaRes.json();
   const foodLogSheet = meta.sheets?.find(s => s.properties?.title === 'Food Log');
   if (!foodLogSheet) throw new Error('Food Log sheet not found');
-
-  // sheetId can be 0 for the first sheet — use nullish check not falsy
   const numericSheetId = foodLogSheet.properties.sheetId ?? null;
   if (numericSheetId === null) throw new Error('Could not read Food Log sheet ID');
-
-  const startIndex = sheetRow - 1;  // batchUpdate is 0-based
+  const startIndex = sheetRow - 1;
   const endIndex   = sheetRow;
-
   if (!sheetRow || isNaN(startIndex)) throw new Error(`Invalid sheetRow: ${sheetRow}`);
   console.log('Deleting row:', sheetRow, 'sheetId:', numericSheetId, 'startIndex:', startIndex);
-
   const url = `${BASE_URL}/${SHEET_ID}:batchUpdate`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      requests: [{
-        deleteDimension: {
-          range: {
-            sheetId:   numericSheetId,
-            dimension: 'ROWS',
-            startIndex,
-            endIndex,
-          },
-        },
-      }],
-    }),
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ deleteDimension: { range: {
+      sheetId: numericSheetId, dimension: 'ROWS', startIndex, endIndex,
+    }}}] }),
   });
-
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     console.error('batchUpdate error:', err);
@@ -386,8 +358,6 @@ export async function deleteFoodEntry(accessToken, sheetRow) {
 }
 
 // ── Saved Meals ───────────────────────────────────────────────────────────────
-// Sheet: "Saved Meals" — Name | Calories | Protein | Carbs | Fat | Notes
-
 export async function fetchSavedMeals(accessToken) {
   const rows = await fetchRange(accessToken, 'Saved Meals!A2:F1000');
   return rows
@@ -404,24 +374,13 @@ export async function fetchSavedMeals(accessToken) {
 }
 
 export async function saveMeal(accessToken, meal) {
-  // meal: { name, calories, protein, carbs, fat, notes }
   const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent('Saved Meals!A:F')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      values: [[
-        meal.name,
-        meal.calories || '',
-        meal.protein  || '',
-        meal.carbs    || '',
-        meal.fat      || '',
-        meal.notes    || '',
-      ]],
-    }),
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [[
+      meal.name, meal.calories || '', meal.protein || '', meal.carbs || '', meal.fat || '', meal.notes || '',
+    ]] }),
   });
   if (!res.ok) throw new Error(`Failed to save meal: ${res.status}`);
   return await res.json();
@@ -432,10 +391,7 @@ export async function deleteSavedMeal(accessToken, rowIndex) {
   const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent(`Saved Meals!A${sheetRow}:F${sheetRow}`)}:clear`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
   });
   if (!res.ok) throw new Error(`Failed to delete saved meal: ${res.status}`);
   return await res.json();
@@ -446,15 +402,8 @@ export async function estimateNutrition(accessToken, messages) {
   const url = `https://script.googleapis.com/v1/scripts/${DEPLOYMENT_ID}:run`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      function: 'estimateNutrition',
-      parameters: [messages],
-      devMode: false,
-    }),
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ function: 'estimateNutrition', parameters: [messages], devMode: false }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -469,10 +418,7 @@ export async function estimateNutrition(accessToken, messages) {
 export async function fetchCoachReport(accessToken) {
   try {
     const rows = await fetchRange(accessToken, 'Coach!A1:B2');
-    return {
-      report:    rows?.[0]?.[1] || null,
-      updatedAt: rows?.[1]?.[1] || null,
-    };
+    return { report: rows?.[0]?.[1] || null, updatedAt: rows?.[1]?.[1] || null };
   } catch {
     return { report: null, updatedAt: null };
   }
@@ -482,15 +428,8 @@ export async function generateCoachReport(accessToken) {
   const url = `https://script.googleapis.com/v1/scripts/${DEPLOYMENT_ID}:run`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      function: 'generateCoachReport',
-      parameters: [],
-      devMode: false,
-    }),
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ function: 'generateCoachReport', parameters: [], devMode: false }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -506,15 +445,8 @@ export async function savePelotonTokens(accessToken, pelotonAccessToken, peloton
   const url = `https://script.googleapis.com/v1/scripts/${DEPLOYMENT_ID}:run`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      function: 'saveTokens',
-      parameters: [pelotonAccessToken, pelotonRefreshToken],
-      devMode: false,
-    }),
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ function: 'saveTokens', parameters: [pelotonAccessToken, pelotonRefreshToken], devMode: false }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -526,8 +458,6 @@ export async function savePelotonTokens(accessToken, pelotonAccessToken, peloton
 }
 
 // ── Food Items ────────────────────────────────────────────────────────────────
-// Sheet: "Food Items" — Name | Unit | Calories | Protein | Carbs | Fat | FdcId
-
 export async function fetchFoodItems(accessToken) {
   const rows = await fetchRange(accessToken, 'Food Items!A2:G1000');
   return rows
@@ -549,9 +479,7 @@ export async function saveFoodItem(accessToken, item) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ values: [[
-      item.name, item.unit, item.calories, item.protein, item.carbs, item.fat, item.fdcId || ''
-    ]] }),
+    body: JSON.stringify({ values: [[item.name, item.unit, item.calories, item.protein, item.carbs, item.fat, item.fdcId || '']] }),
   });
   if (!res.ok) throw new Error(`Failed to save food item: ${res.status}`);
   return await res.json();
@@ -563,14 +491,13 @@ export async function deleteFoodItem(accessToken, rowIndex) {
   const meta = await metaRes.json();
   const sheet = meta.sheets?.find(s => s.properties?.title === 'Food Items');
   if (!sheet) throw new Error('Food Items sheet not found');
-  const numericSheetId = sheet.properties.sheetId;
   const sheetRow = rowIndex + 2;
   const url = `${BASE_URL}/${SHEET_ID}:batchUpdate`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ requests: [{ deleteDimension: { range: {
-      sheetId: numericSheetId, dimension: 'ROWS',
+      sheetId: sheet.properties.sheetId, dimension: 'ROWS',
       startIndex: sheetRow - 1, endIndex: sheetRow,
     }}}] }),
   });
@@ -579,18 +506,13 @@ export async function deleteFoodItem(accessToken, rowIndex) {
 }
 
 // ── Meal Templates ────────────────────────────────────────────────────────────
-// Sheet: "Meal Templates" — Name | JSON (template definition)
-
 export async function fetchMealTemplates(accessToken) {
   const rows = await fetchRange(accessToken, 'Meal Templates!A2:B1000');
   return rows
     .filter(r => r[0] && r[1])
     .map((r, i) => {
-      try {
-        return { rowIndex: i, name: r[0], ...JSON.parse(r[1]) };
-      } catch {
-        return null;
-      }
+      try { return { rowIndex: i, name: r[0], ...JSON.parse(r[1]) }; }
+      catch { return null; }
     })
     .filter(Boolean);
 }
@@ -613,14 +535,13 @@ export async function deleteMealTemplate(accessToken, rowIndex) {
   const meta = await metaRes.json();
   const sheet = meta.sheets?.find(s => s.properties?.title === 'Meal Templates');
   if (!sheet) throw new Error('Meal Templates sheet not found');
-  const numericSheetId = sheet.properties.sheetId;
   const sheetRow = rowIndex + 2;
   const url = `${BASE_URL}/${SHEET_ID}:batchUpdate`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ requests: [{ deleteDimension: { range: {
-      sheetId: numericSheetId, dimension: 'ROWS',
+      sheetId: sheet.properties.sheetId, dimension: 'ROWS',
       startIndex: sheetRow - 1, endIndex: sheetRow,
     }}}] }),
   });
@@ -629,8 +550,6 @@ export async function deleteMealTemplate(accessToken, rowIndex) {
 }
 
 // ── Food Library ──────────────────────────────────────────────────────────────
-// Sheet: "Food Library" — Name | Unit | Cal/Unit | Protein/Unit | Carbs/Unit | Fat/Unit
-
 export async function fetchFoodLibrary(accessToken) {
   const rows = await fetchRange(accessToken, 'Food Library!A2:F1000');
   return rows
@@ -651,9 +570,7 @@ export async function saveFoodLibraryItem(accessToken, item) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ values: [[
-      item.name, item.unit, item.calories, item.protein, item.carbs, item.fat
-    ]] }),
+    body: JSON.stringify({ values: [[item.name, item.unit, item.calories, item.protein, item.carbs, item.fat]] }),
   });
   if (!res.ok) throw new Error(`Failed to save food item: ${res.status}`);
   return await res.json();
@@ -679,16 +596,13 @@ export async function deleteFoodLibraryItem(accessToken, rowIndex) {
   return await res.json();
 }
 
-// Update saved meal (overwrite by rowIndex)
 export async function updateSavedMeal(accessToken, rowIndex, meal) {
   const sheetRow = rowIndex + 2;
   const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent(`Saved Meals!A${sheetRow}:F${sheetRow}`)}?valueInputOption=RAW`;
   const res = await fetch(url, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ values: [[
-      meal.name, meal.calories, meal.protein, meal.carbs, meal.fat, meal.notes || ''
-    ]] }),
+    body: JSON.stringify({ values: [[meal.name, meal.calories, meal.protein, meal.carbs, meal.fat, meal.notes || '']] }),
   });
   if (!res.ok) throw new Error(`Failed to update meal: ${res.status}`);
   return await res.json();

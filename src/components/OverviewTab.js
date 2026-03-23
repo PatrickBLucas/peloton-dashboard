@@ -5,6 +5,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar,
   ComposedChart, Line, ReferenceLine, Legend
 } from 'recharts';
+import { computeSleepStats } from '../api/sheets';
 
 function StatCard({ label, value, sub, accent, color }) {
   return (
@@ -23,6 +24,20 @@ export default function OverviewTab({ data }) {
     ? Math.round(stats.todayConsumed - stats.todayBurned) : null;
   const netYesterday = stats.yesterdayConsumed && stats.yesterdayBurned
     ? Math.round(stats.yesterdayConsumed - stats.yesterdayBurned) : null;
+
+  // 7-day sleep averages
+  const sleep = useMemo(() => computeSleepStats(fitbit), [fitbit]);
+
+  // Sleep efficiency color coding
+  const sleepEfficiencyColor = sleep.avgEfficiency === null ? null
+    : sleep.avgEfficiency >= 90 ? 'green'
+    : sleep.avgEfficiency >= 80 ? null
+    : 'red';
+
+  // Sleep hours color coding (7-9 hours is healthy range)
+  const sleepHoursColor = sleep.avgHours === null ? null
+    : sleep.avgHours >= 7 && sleep.avgHours <= 9 ? 'green'
+    : 'red';
 
   // Last 20 sessions activity chart
   const activityChart = useMemo(() => {
@@ -48,41 +63,36 @@ export default function OverviewTab({ data }) {
     const cutoff = subDays(new Date(), 30);
     const today  = new Date();
 
-    // Build a map of weight by date string
     const weightByDate = {};
     weight.filter(w => w.date >= cutoff && w.weight)
       .forEach(w => { weightByDate[format(w.date, 'yyyy-MM-dd')] = w.weight; });
 
-    // Build a map of net calories by date string from Fitbit
     const netByDate = {};
     data.fitbit.filter(d => d.date >= cutoff).forEach(d => {
       const ds = format(d.date, 'yyyy-MM-dd');
       const burned   = d.caloriesOut || 0;
-      // Prefer food log calories
       const consumed = (data.foodLog || [])
         .filter(e => e.date === ds)
         .reduce((s, e) => s + (e.calories || 0), 0) || d.caloriesConsumed || 0;
       if (burned && consumed) netByDate[ds] = Math.round(consumed - burned);
     });
 
-    // Build set of ride dates
     const rideDates = new Set(
       (data.workouts || [])
         .filter(w => w.type === 'cycling' && w.date >= cutoff)
         .map(w => format(w.date, 'yyyy-MM-dd'))
     );
 
-    // Generate a point for every day in the last 30 days
     const days = [];
     for (let i = 29; i >= 0; i--) {
       const d   = subDays(today, i);
       const ds  = format(d, 'yyyy-MM-dd');
       const lbl = format(d, 'M/d');
       days.push({
-        date:    lbl,
-        weight:  weightByDate[ds] ?? null,
-        net:     netByDate[ds]    ?? null,
-        rode:    rideDates.has(ds) ? 1 : null,
+        date:   lbl,
+        weight: weightByDate[ds] ?? null,
+        net:    netByDate[ds]    ?? null,
+        rode:   rideDates.has(ds) ? 1 : null,
       });
     }
     return days;
@@ -198,6 +208,30 @@ export default function OverviewTab({ data }) {
         />
       </div>
 
+      {/* Sleep stats — 7-day rolling averages */}
+      <div className="section-label" style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 8px' }}>
+        Sleep — 7-Day Average {sleep.sampleDays > 0 ? `(${sleep.sampleDays} nights)` : ''}
+      </div>
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <StatCard
+          label="Avg Hours Slept"
+          value={sleep.avgHours !== null ? `${sleep.avgHours}h` : '--'}
+          sub="per night"
+          color={sleepHoursColor}
+        />
+        <StatCard
+          label="Sleep Efficiency"
+          value={sleep.avgEfficiency !== null ? `${sleep.avgEfficiency}%` : '--'}
+          sub="time asleep / time in bed"
+          color={sleepEfficiencyColor}
+        />
+        <StatCard
+          label="Avg Restlessness"
+          value={sleep.avgRestlessCount !== null ? sleep.avgRestlessCount : '--'}
+          sub="restless episodes / night"
+        />
+      </div>
+
       {/* Charts */}
       <div className="chart-grid">
         <div className="chart-card">
@@ -246,6 +280,7 @@ export default function OverviewTab({ data }) {
           )}
         </div>
       </div>
+
       {/* Combined insight chart */}
       <div className="chart-card" style={{ marginTop: 16 }}>
         <div className="chart-title">Weight, Net Calories &amp; Rides — Last 30 Days</div>
@@ -258,27 +293,22 @@ export default function OverviewTab({ data }) {
               </linearGradient>
             </defs>
             <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--text2)' }} tickLine={false} axisLine={false} interval={2} angle={-45} textAnchor="end" height={40} />
-            {/* Left Y axis — weight */}
             <YAxis yAxisId="w" domain={['auto', 'auto']} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={36} tickFormatter={v => `${v}`} />
-            {/* Right Y axis — net calories */}
             <YAxis yAxisId="n" orientation="right" domain={['auto', 'auto']} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={42} tickFormatter={v => `${v > 0 ? '+' : ''}${v}`} />
             <Tooltip
               contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
               labelStyle={{ color: 'var(--text)', fontSize: 11, fontWeight: 600 }}
               itemStyle={{ fontSize: 11 }}
               formatter={(v, name) => {
-                if (name === 'Weight')      return [`${v} lbs`, 'Weight'];
-                if (name === 'Net Cal')     return [`${v > 0 ? '+' : ''}${v} kcal`, 'Net Calories'];
-                if (name === 'Rode')        return ['🚴 Ride', ''];
+                if (name === 'Weight')  return [`${v} lbs`, 'Weight'];
+                if (name === 'Net Cal') return [`${v > 0 ? '+' : ''}${v} kcal`, 'Net Calories'];
+                if (name === 'Rode')    return ['🚴 Ride', ''];
                 return [v, name];
               }}
             />
             <ReferenceLine yAxisId="n" y={0} stroke="var(--border)" strokeDasharray="3 3" />
-            {/* Net calories bars */}
             <Bar yAxisId="n" dataKey="net" name="Net Cal" fill="#4a90d9" opacity={0.6} radius={[2, 2, 0, 0]} barSize={6} />
-            {/* Ride day markers */}
             <Bar yAxisId="n" dataKey="rode" name="Rode" fill="var(--accent)" opacity={0.9} radius={[2, 2, 0, 0]} barSize={4} />
-            {/* Weight line */}
             <Line yAxisId="w" type="monotone" dataKey="weight" name="Weight" stroke="var(--accent)" strokeWidth={2} dot={false} connectNulls />
             <Legend
               verticalAlign="top"
