@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   fetchWorkouts, fetchFitbitData, fetchWeight, fetch108, fetchFoodLog,
-  triggerSync, computeStats, fetchGoalWeight, saveGoalWeight, savePelotonTokens
+  triggerSync, computeStats, fetchGoalWeight, saveGoalWeight
 } from '../api/sheets';
 import OverviewTab from './OverviewTab';
 import WorkoutsTab from './WorkoutsTab';
@@ -88,7 +88,6 @@ export default function Dashboard({ accessToken, onLogout }) {
   const [savingGoal, setSavingGoal] = useState(false);
   const [syncing, setSyncing] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
-  const [reconnecting, setReconnecting] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -114,50 +113,22 @@ export default function Dashboard({ accessToken, onLogout }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Listen for Peloton reconnect result from the popup
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.data?.type === 'PELOTON_TOKENS_SAVED') {
-        // Tokens were saved server-side by the Web App — just show success
-        setSyncMsg({ type: 'success', text: 'Peloton reconnected! Tokens saved.' });
-        setTimeout(() => setSyncMsg(null), 4000);
-        setReconnecting(false);
-      } else if (e.data?.type === 'PELOTON_TOKENS_ERROR') {
-        setSyncMsg({ type: 'error', text: `Reconnect failed: ${e.data.error}` });
-        setReconnecting(false);
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
-
-  const handleReconnectPeloton = useCallback(() => {
-    setReconnecting(false); // not a blocking state for this flow
-    const reconnectUrl = `${window.location.origin}/peloton-dashboard/reconnect.html`;
-    window.open(reconnectUrl, 'peloton-reconnect', 'width=400,height=600,left=200,top=100');
-  }, []);
-
   const handleSaveGoal = useCallback(async () => {
-    const val = parseFloat(goalInput);
-    if (isNaN(val) || val < 50 || val > 500) return;
+    if (!goalInput) return;
     setSavingGoal(true);
     try {
-      await saveGoalWeight(accessToken, val);
-      setGoalWeight(val);
+      await saveGoalWeight(accessToken, parseFloat(goalInput), data);
       setEditingGoal(false);
-      if (data) {
-        const stats = computeStats(data.weight, data.fitbit, data.workouts, val);
-        setData(d => ({ ...d, stats }));
-      }
+      await loadData();
     } catch (e) {
-      setSyncMsg({ type: 'error', text: `Failed to save goal: ${e.message}` });
+      console.error('Failed to save goal', e);
     } finally {
       setSavingGoal(false);
     }
-  }, [accessToken, goalInput, data]);
+  }, [accessToken, goalInput, data, loadData]);
 
   const handleSync = useCallback(async (type) => {
-    const fnName = type === 'fitbit' ? 'sync' : type === 'peloton' ? 'syncPeloton' : 'sendPDF';
+    const fnName = type === 'fitbit' ? 'sync' : type === 'peloton' ? 'syncStrava' : 'sendPDF';
     setSyncing(type);
     setSyncMsg(null);
     try {
@@ -205,10 +176,7 @@ export default function Dashboard({ accessToken, onLogout }) {
             )}
             <button className="sync-btn" onClick={() => handleSync('108')} disabled={syncing !== null}>{syncing === '108' ? '...' : '📧 10-8'}</button>
             <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null}>{syncing === 'fitbit' ? '...' : '⟳ Fitbit'}</button>
-            <button className="sync-btn" onClick={() => handleSync('peloton')} disabled={syncing !== null}>{syncing === 'peloton' ? '...' : '⟳ Peloton'}</button>
-            <button className="sync-btn" onClick={handleReconnectPeloton} disabled={reconnecting} title="Reconnect Peloton when sync fails">
-              {reconnecting ? '...' : '🔗 Reconnect'}
-            </button>
+            <button className="sync-btn" onClick={() => handleSync('peloton')} disabled={syncing !== null}>{syncing === 'peloton' ? '...' : '⟳ Strava'}</button>
             {syncTime && <span className="sync-time">loaded {syncTime}</span>}
             <button className="logout-btn" onClick={onLogout}>Sign out</button>
           </div>
@@ -245,10 +213,7 @@ export default function Dashboard({ accessToken, onLogout }) {
           )}
           <button className="sync-btn" onClick={() => { handleSync('108'); setMenuOpen(false); }} disabled={syncing !== null}>{syncing === '108' ? '...' : '📧 10-8'}</button>
           <button className="sync-btn" onClick={() => { handleSync('fitbit'); setMenuOpen(false); }} disabled={syncing !== null}>{syncing === 'fitbit' ? '...' : '⟳ Fitbit'}</button>
-          <button className="sync-btn" onClick={() => { handleSync('peloton'); setMenuOpen(false); }} disabled={syncing !== null}>{syncing === 'peloton' ? '...' : '⟳ Peloton'}</button>
-          <button className="sync-btn" onClick={() => { handleReconnectPeloton(); setMenuOpen(false); }} disabled={reconnecting}>
-            {reconnecting ? '...' : '🔗 Reconnect Peloton'}
-          </button>
+          <button className="sync-btn" onClick={() => { handleSync('peloton'); setMenuOpen(false); }} disabled={syncing !== null}>{syncing === 'peloton' ? '...' : '⟳ Strava'}</button>
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
           <button className="logout-btn" onClick={onLogout}>Sign out</button>
         </div>
