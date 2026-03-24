@@ -387,13 +387,30 @@ export async function saveMeal(accessToken, meal) {
 }
 
 export async function deleteSavedMeal(accessToken, rowIndex) {
+  const metaUrl = `${BASE_URL}/${SHEET_ID}?fields=sheets.properties`;
+  const metaRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const meta = await metaRes.json();
+  const sheet = meta.sheets?.find(s => s.properties?.title === 'Saved Meals');
+  if (!sheet) throw new Error('Saved Meals sheet not found');
+  const numericSheetId = sheet.properties.sheetId ?? null;
+  if (numericSheetId === null) throw new Error('Could not read Saved Meals sheet ID');
   const sheetRow = rowIndex + 2;
-  const url = `${BASE_URL}/${SHEET_ID}/values/${encodeURIComponent(`Saved Meals!A${sheetRow}:F${sheetRow}`)}:clear`;
+  const startIndex = sheetRow - 1;
+  const endIndex = sheetRow;
+  console.log('Deleting saved meal row:', sheetRow, 'sheetId:', numericSheetId);
+  const url = `${BASE_URL}/${SHEET_ID}:batchUpdate`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ deleteDimension: { range: {
+      sheetId: numericSheetId, dimension: 'ROWS', startIndex, endIndex,
+    }}}] }),
   });
-  if (!res.ok) throw new Error(`Failed to delete saved meal: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('batchUpdate error:', err);
+    throw new Error(`Delete failed: ${err.error?.message || res.status}`);
+  }
   return await res.json();
 }
 

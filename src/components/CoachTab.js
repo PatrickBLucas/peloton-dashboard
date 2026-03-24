@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchCoachReport, generateCoachReport } from '../api/sheets';
+import { fetchCoachReport, saveCoachReport } from '../api/supabase';
+import { supabase } from '../lib/supabase';
 
-export default function CoachTab({ accessToken }) {
-  const [report, setReport]       = useState(null);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [loading, setLoading]     = useState(true);
+export default function CoachTab({ userId }) {
+  const [report, setReport]         = useState(null);
+  const [updatedAt, setUpdatedAt]   = useState(null);
+  const [loading, setLoading]       = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [error, setError]         = useState(null);
+  const [error, setError]           = useState(null);
 
   const loadReport = useCallback(async () => {
     setLoading(true);
     try {
-      const { report, updatedAt } = await fetchCoachReport(accessToken);
+      const { report, updatedAt } = await fetchCoachReport(userId);
       setReport(report);
       setUpdatedAt(updatedAt);
     } catch (e) {
@@ -19,7 +20,7 @@ export default function CoachTab({ accessToken }) {
     } finally {
       setLoading(false);
     }
-  }, [accessToken]);
+  }, [userId]);
 
   useEffect(() => { loadReport(); }, [loadReport]);
 
@@ -27,9 +28,23 @@ export default function CoachTab({ accessToken }) {
     setGenerating(true);
     setError(null);
     try {
-      const { report, updatedAt } = await generateCoachReport(accessToken);
-      setReport(report);
-      setUpdatedAt(updatedAt);
+      // Get fresh session token for the API call
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{ role: 'user', content: 'Generate a fitness coach report.' }],
+        }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      const reportText = data.content?.[0]?.text || '';
+      await saveCoachReport(userId, reportText);
+      setReport(reportText);
+      setUpdatedAt(new Date().toISOString());
     } catch (e) {
       setError(`Failed to generate report: ${e.message}`);
     } finally {
@@ -37,23 +52,17 @@ export default function CoachTab({ accessToken }) {
     }
   };
 
-  // Parse markdown-style bold headers into sections
   const renderReport = (text) => {
     if (!text) return null;
-    // Split on numbered section headers like "1. **Title**"
     const sections = text.split(/(?=\d+\.\s\*\*)/);
     return sections.map((section, i) => {
       if (!section.trim()) return null;
-      // Extract header and body
       const headerMatch = section.match(/^\d+\.\s\*\*(.+?)\*\*\s*[—-]?\s*([\s\S]*)/);
       if (headerMatch) {
         const [, title, body] = headerMatch;
         return (
           <div key={i} style={{ marginBottom: 20 }}>
-            <div style={{
-              fontSize: 11, fontWeight: 600, color: 'var(--accent)',
-              letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8,
-            }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
               {title}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.7 }}>
@@ -70,24 +79,14 @@ export default function CoachTab({ accessToken }) {
     });
   };
 
-  // Render inline bold and bullet points
   const renderBodyText = (text) => {
     return text.split('\n').map((line, i) => {
       if (!line.trim()) return null;
-      // Bullet point
       const isBullet = /^[-•*]\s/.test(line.trim());
       const cleaned = line.replace(/\*\*(.+?)\*\*/g, '$1').replace(/^[-•*]\s/, '');
       return (
-        <div key={i} style={{
-          paddingLeft: isBullet ? 16 : 0,
-          marginBottom: 4,
-          position: 'relative',
-        }}>
-          {isBullet && (
-            <span style={{
-              position: 'absolute', left: 0, color: 'var(--accent)', fontWeight: 700,
-            }}>·</span>
-          )}
+        <div key={i} style={{ paddingLeft: isBullet ? 16 : 0, marginBottom: 4, position: 'relative' }}>
+          {isBullet && <span style={{ position: 'absolute', left: 0, color: 'var(--accent)', fontWeight: 700 }}>·</span>}
           {cleaned}
         </div>
       );
@@ -98,16 +97,11 @@ export default function CoachTab({ accessToken }) {
     <>
       <div className="section-header">
         <span className="section-title">AI COACH</span>
-        {updatedAt && <span className="section-sub">{updatedAt}</span>}
+        {updatedAt && <span className="section-sub">{new Date(updatedAt).toLocaleDateString()}</span>}
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <button
-          className="sync-btn"
-          onClick={handleGenerate}
-          disabled={generating}
-          style={{ width: '100%', padding: 14, fontSize: 14 }}
-        >
+        <button className="sync-btn" onClick={handleGenerate} disabled={generating} style={{ width: '100%', padding: 14, fontSize: 14 }}>
           {generating ? '🤖 Generating report...' : '🤖 Generate Report Now'}
         </button>
         {generating && (
@@ -117,18 +111,12 @@ export default function CoachTab({ accessToken }) {
         )}
       </div>
 
-      {error && (
-        <div className="sync-banner error" style={{ marginBottom: 16 }}>{error}</div>
-      )}
+      {error && <div className="sync-banner error" style={{ marginBottom: 16 }}>{error}</div>}
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>
-          Loading...
-        </div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>Loading...</div>
       ) : report ? (
-        <div className="chart-card">
-          {renderReport(report)}
-        </div>
+        <div className="chart-card">{renderReport(report)}</div>
       ) : (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
           No report yet. Tap the button above to generate your first one.

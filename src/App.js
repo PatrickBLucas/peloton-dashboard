@@ -1,15 +1,18 @@
 // src/App.js
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
+import { useState, useEffect } from 'react';
+import { supabase } from './lib/supabase';
 import Dashboard from './components/Dashboard';
 import './App.css';
 
-const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-const SCOPE = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects';
-const REFRESH_BUFFER_MS = 10 * 60 * 1000; // refresh 10 min before expiry
-
-function LoginScreen({ onLogin, expired = false }) {
-  const login = useGoogleLogin({ onSuccess: onLogin, scope: SCOPE });
+function LoginScreen({ expired = false }) {
+  const handleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+  };
 
   return (
     <div className="login-screen">
@@ -24,7 +27,7 @@ function LoginScreen({ onLogin, expired = false }) {
         ) : (
           <p className="login-tagline">Your training. Your data. Your progress.</p>
         )}
-        <button className="login-btn" onClick={() => login()}>
+        <button className="login-btn" onClick={handleLogin}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -46,105 +49,40 @@ function LoginScreen({ onLogin, expired = false }) {
   );
 }
 
-function AppInner() {
-  const [token, setToken] = useState(() => {
-    const saved  = localStorage.getItem('gtoken');
-    const expiry = localStorage.getItem('gtoken_expiry');
-    if (saved && expiry && Date.now() < parseInt(expiry)) return saved;
-    return null;
-  });
-  const [expired, setExpired] = useState(false);
-  const refreshTimerRef = useRef(null);
-  const tokenRef = useRef(token);
-  tokenRef.current = token;
-
-  const handleLogout = useCallback((isExpired = false) => {
-    localStorage.removeItem('gtoken');
-    localStorage.removeItem('gtoken_expiry');
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    setToken(null);
-    setExpired(isExpired);
-  }, []);
-
-  const silentLogin = useGoogleLogin({
-    onSuccess: (tokenResponse) => {
-      const expiry = Date.now() + (tokenResponse.expires_in * 1000);
-      localStorage.setItem('gtoken', tokenResponse.access_token);
-      localStorage.setItem('gtoken_expiry', expiry.toString());
-      setToken(tokenResponse.access_token);
-      setExpired(false);
-      scheduleRefresh(expiry);
-    },
-    onError: () => handleLogout(true),
-    scope: SCOPE,
-    prompt: '',
-  });
-
-  const scheduleRefresh = useCallback((expiry) => {
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    const delay = expiry - Date.now() - REFRESH_BUFFER_MS;
-    if (delay > 0) {
-      refreshTimerRef.current = setTimeout(() => silentLogin(), delay);
-    }
-  }, [silentLogin]);
-
-  const handleLogin = useCallback((tokenResponse) => {
-    const expiry = Date.now() + (tokenResponse.expires_in * 1000);
-    localStorage.setItem('gtoken', tokenResponse.access_token);
-    localStorage.setItem('gtoken_expiry', expiry.toString());
-    setToken(tokenResponse.access_token);
-    setExpired(false);
-    scheduleRefresh(expiry);
-  }, [scheduleRefresh]);
-
-  // Check token validity and refresh proactively
-  const ensureFreshToken = useCallback(() => {
-    const expiry = parseInt(localStorage.getItem('gtoken_expiry') || '0');
-    const timeLeft = expiry - Date.now();
-    if (timeLeft < REFRESH_BUFFER_MS) {
-      silentLogin();
-    }
-  }, [silentLogin]);
-
-  // On mount, schedule refresh for existing token
-  useEffect(() => {
-    const expiry = localStorage.getItem('gtoken_expiry');
-    if (token && expiry) scheduleRefresh(parseInt(expiry));
-    return () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); };
-  }, []);
-
-  // Refresh when app comes back to foreground
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && tokenRef.current) {
-        ensureFreshToken();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [ensureFreshToken]);
-
-  // Catch 401 errors app-wide and show expired screen
-  useEffect(() => {
-    const origFetch = window.fetch;
-    window.fetch = async (...args) => {
-      const res = await origFetch(...args);
-      if (res.status === 401 && tokenRef.current) {
-        handleLogout(true);
-      }
-      return res;
-    };
-    return () => { window.fetch = origFetch; };
-  }, [handleLogout]);
-
-  if (!token) return <LoginScreen onLogin={handleLogin} expired={expired} />;
-  return <Dashboard accessToken={token} onLogout={handleLogout} />;
-}
-
 export default function App() {
+  const [session, setSession] = useState(undefined); // undefined = loading
+
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    // Listen for auth state changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Still determining session state
+  if (session === undefined) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
+        <div style={{ color: 'var(--text3)', fontSize: 14 }}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginScreen />;
+  }
+
   return (
-    <GoogleOAuthProvider clientId={CLIENT_ID}>
-      <AppInner />
-    </GoogleOAuthProvider>
+    <Dashboard
+      session={session}
+      onLogout={() => supabase.auth.signOut()}
+    />
   );
 }

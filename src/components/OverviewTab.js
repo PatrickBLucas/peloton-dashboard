@@ -5,7 +5,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar,
   ComposedChart, Line, ReferenceLine, Legend
 } from 'recharts';
-import { computeSleepStats } from '../api/sheets';
+import { computeSleepStats } from '../api/supabase';
 
 function StatCard({ label, value, sub, accent, color }) {
   return (
@@ -25,21 +25,17 @@ export default function OverviewTab({ data }) {
   const netYesterday = stats.yesterdayConsumed && stats.yesterdayBurned
     ? Math.round(stats.yesterdayConsumed - stats.yesterdayBurned) : null;
 
-  // 7-day sleep averages
   const sleep = useMemo(() => computeSleepStats(fitbit), [fitbit]);
 
-  // Sleep efficiency color coding
   const sleepEfficiencyColor = sleep.avgEfficiency === null ? null
     : sleep.avgEfficiency >= 90 ? 'green'
     : sleep.avgEfficiency >= 80 ? null
     : 'red';
 
-  // Sleep hours color coding (7-9 hours is healthy range)
   const sleepHoursColor = sleep.avgHours === null ? null
     : sleep.avgHours >= 7 && sleep.avgHours <= 9 ? 'green'
     : 'red';
 
-  // Last 20 sessions activity chart
   const activityChart = useMemo(() => {
     return [...workouts]
       .sort((a, b) => a.date - b.date)
@@ -50,7 +46,6 @@ export default function OverviewTab({ data }) {
       }));
   }, [workouts]);
 
-  // Weight trend last 60 days
   const weightChart = useMemo(() => {
     const cutoff = subDays(new Date(), 60);
     return weight
@@ -58,7 +53,6 @@ export default function OverviewTab({ data }) {
       .map(w => ({ date: format(w.date, 'MMM d'), weight: w.weight }));
   }, [weight]);
 
-  // Combined 30-day chart: weight + net calories + ride days
   const comboChart = useMemo(() => {
     const cutoff = subDays(new Date(), 30);
     const today  = new Date();
@@ -98,7 +92,6 @@ export default function OverviewTab({ data }) {
     return days;
   }, [weight, data.fitbit, data.foodLog, data.workouts]);
 
-  // Projected goal date from linear regression on last 30 days of weight (falls back to 60)
   const projectedDate = useMemo(() => {
     const getEntries = (days) => {
       const cutoff = subDays(new Date(), days);
@@ -117,8 +110,8 @@ export default function OverviewTab({ data }) {
       y: e.weight,
     }));
     const n = pts.length;
-    const sumX = pts.reduce((s, p) => s + p.x, 0);
-    const sumY = pts.reduce((s, p) => s + p.y, 0);
+    const sumX  = pts.reduce((s, p) => s + p.x, 0);
+    const sumY  = pts.reduce((s, p) => s + p.y, 0);
     const sumXY = pts.reduce((s, p) => s + p.x * p.y, 0);
     const sumX2 = pts.reduce((s, p) => s + p.x * p.x, 0);
     const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
@@ -132,7 +125,6 @@ export default function OverviewTab({ data }) {
 
   return (
     <>
-      {/* Today banner */}
       <div className="today-banner">
         <div className="today-cell">
           <div className="today-label">Today — Net Calories</div>
@@ -161,78 +153,26 @@ export default function OverviewTab({ data }) {
         </div>
       </div>
 
-      {/* Key stats */}
       <div className="stat-grid">
-        <StatCard
-          label="Current Weight"
-          value={stats.currentWeight ? `${stats.currentWeight} lbs` : '--'}
-          sub={`Goal: ${stats.goalWeight} lbs`}
-          accent
-        />
-        <StatCard
-          label="Pounds to Go"
-          value={stats.poundsToGo !== null ? `${stats.poundsToGo}` : '--'}
-          sub="until goal weight"
-          color={stats.poundsToGo > 0 ? 'red' : 'green'}
-        />
-        <StatCard
-          label="Weight Lost"
-          value={stats.weightLost ? `${stats.weightLost} lbs` : '--'}
-          sub="since start"
-          color="green"
-        />
-        <StatCard
-          label="Projected Goal"
-          value={projectedDate}
-          sub="based on trend"
-        />
-        <StatCard
-          label="BMR"
-          value={stats.bmr ? stats.bmr.toLocaleString() : '--'}
-          sub={`age ${stats.age}, ${stats.currentWeight} lbs`}
-        />
-        <StatCard
-          label="TDEE"
-          value={stats.tdee ? stats.tdee.toLocaleString() : '--'}
-          sub={stats.activityLevel ? `${stats.activityLevel} (×${stats.activityFactor?.toFixed(2)})` : 'moderate activity'}
-        />
-        <StatCard
-          label="Total Activities"
-          value={stats.rides ?? '--'}
-          sub="all time"
-        />
-        <StatCard
-          label="Total Time"
-          value={stats.totalMinutes ? `${Math.floor(stats.totalMinutes / 60)}h` : '--'}
-          sub="all time"
-        />
+        <StatCard label="Current Weight" value={stats.currentWeight ? `${stats.currentWeight} lbs` : '--'} sub={`Goal: ${stats.goalWeight} lbs`} accent />
+        <StatCard label="Pounds to Go" value={stats.poundsToGo !== null ? `${stats.poundsToGo}` : '--'} sub="until goal weight" color={stats.poundsToGo > 0 ? 'red' : 'green'} />
+        <StatCard label="Weight Lost" value={stats.weightLost ? `${stats.weightLost} lbs` : '--'} sub="since start" color="green" />
+        <StatCard label="Projected Goal" value={projectedDate} sub="based on trend" />
+        <StatCard label="BMR" value={stats.bmr ? stats.bmr.toLocaleString() : '--'} sub={`age ${stats.age}, ${stats.currentWeight} lbs`} />
+        <StatCard label="TDEE" value={stats.tdee ? stats.tdee.toLocaleString() : '--'} sub={stats.activityLevel ? `${stats.activityLevel} (×${stats.activityFactor?.toFixed(2)})` : 'moderate activity'} />
+        <StatCard label="Total Activities" value={stats.rides ?? '--'} sub="all time" />
+        <StatCard label="Total Time" value={stats.totalMinutes ? `${Math.floor(stats.totalMinutes / 60)}h` : '--'} sub="all time" />
       </div>
 
-      {/* Sleep stats — 7-day rolling averages */}
       <div className="section-label" style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 8px' }}>
         Sleep — 7-Day Average {sleep.sampleDays > 0 ? `(${sleep.sampleDays} nights)` : ''}
       </div>
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-        <StatCard
-          label="Avg Hours Slept"
-          value={sleep.avgHours !== null ? `${sleep.avgHours}h` : '--'}
-          sub="per night"
-          color={sleepHoursColor}
-        />
-        <StatCard
-          label="Sleep Efficiency"
-          value={sleep.avgEfficiency !== null ? `${sleep.avgEfficiency}%` : '--'}
-          sub="time asleep / time in bed"
-          color={sleepEfficiencyColor}
-        />
-        <StatCard
-          label="Avg Restlessness"
-          value={sleep.avgRestlessCount !== null ? sleep.avgRestlessCount : '--'}
-          sub="restless episodes / night"
-        />
+        <StatCard label="Avg Hours Slept" value={sleep.avgHours !== null ? `${sleep.avgHours}h` : '--'} sub="per night" color={sleepHoursColor} />
+        <StatCard label="Sleep Efficiency" value={sleep.avgEfficiency !== null ? `${sleep.avgEfficiency}%` : '--'} sub="time asleep / time in bed" color={sleepEfficiencyColor} />
+        <StatCard label="Avg Restlessness" value={sleep.avgRestlessCount !== null ? sleep.avgRestlessCount : '--'} sub="restless episodes / night" />
       </div>
 
-      {/* Charts */}
       <div className="chart-grid">
         <div className="chart-card">
           <div className="chart-title">Activity — Last 20 Sessions (minutes)</div>
@@ -274,14 +214,11 @@ export default function OverviewTab({ data }) {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div style={{ color: 'var(--text3)', padding: '40px 0', textAlign: 'center', fontSize: 13 }}>
-              Not enough weight data
-            </div>
+            <div style={{ color: 'var(--text3)', padding: '40px 0', textAlign: 'center', fontSize: 13 }}>Not enough weight data</div>
           )}
         </div>
       </div>
 
-      {/* Combined insight chart */}
       <div className="chart-card" style={{ marginTop: 16 }}>
         <div className="chart-title">Weight, Net Calories &amp; Rides — Last 30 Days</div>
         <ResponsiveContainer width="100%" height={240}>
@@ -310,11 +247,7 @@ export default function OverviewTab({ data }) {
             <Bar yAxisId="n" dataKey="net" name="Net Cal" fill="#4a90d9" opacity={0.6} radius={[2, 2, 0, 0]} barSize={6} />
             <Bar yAxisId="n" dataKey="rode" name="Rode" fill="var(--accent)" opacity={0.9} radius={[2, 2, 0, 0]} barSize={4} />
             <Line yAxisId="w" type="monotone" dataKey="weight" name="Weight" stroke="var(--accent)" strokeWidth={2} dot={false} connectNulls />
-            <Legend
-              verticalAlign="top"
-              height={24}
-              formatter={(value) => <span style={{ fontSize: 11, color: 'var(--text2)' }}>{value}</span>}
-            />
+            <Legend verticalAlign="top" height={24} formatter={(value) => <span style={{ fontSize: 11, color: 'var(--text2)' }}>{value}</span>} />
           </ComposedChart>
         </ResponsiveContainer>
         <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', marginTop: 4 }}>
