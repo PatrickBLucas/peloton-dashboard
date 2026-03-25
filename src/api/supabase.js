@@ -293,10 +293,9 @@ export async function fetchCoachReport(userId) {
     .select('report, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-  if (error) return { report: null, updatedAt: null };
-  return { report: data.report, updatedAt: data.created_at };
+    .limit(1);
+  if (error || !data || data.length === 0) return { report: null, updatedAt: null };
+  return { report: data[0].report, updatedAt: data[0].created_at };
 }
 
 export async function saveCoachReport(userId, report) {
