@@ -1,16 +1,18 @@
 // src/App.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from './lib/supabase';
 import Dashboard from './components/Dashboard';
+import Onboarding from './components/Onboarding';
 import './App.css';
+
+const SUPABASE_FUNCTIONS_URL = 'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1';
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtdGV2Zmxmcnlqa3Vka2NwbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNzA3NzgsImV4cCI6MjA4OTk0Njc3OH0.9riWHdjPggS9so5VXzcOmlQ-gsAREzZhfRmNAEEe2Rw';
 
 function LoginScreen({ expired = false }) {
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-      },
+      options: { redirectTo: window.location.origin },
     });
   };
 
@@ -50,24 +52,61 @@ function LoginScreen({ expired = false }) {
 }
 
 export default function App() {
-  const [session, setSession] = useState(undefined); // undefined = loading
+  const [session, setSession]               = useState(undefined);
+  const [onboardingDone, setOnboardingDone] = useState(false);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(false);
+
+  // Handle Fitbit callback redirect
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/auth/fitbit/callback') {
+      const params = new URLSearchParams(window.location.search);
+      const code  = params.get('code');
+      const state = params.get('state');
+      if (code && state) {
+        fetch(`${SUPABASE_FUNCTIONS_URL}/fitbit-callback?code=${encodeURIComponent(code)}&state=${state}`, {
+          headers: { Authorization: `Bearer ${ANON_KEY}` },
+        }).then(() => {
+          window.location.href = '/onboarding?fitbit=success';
+        }).catch(() => {
+          window.location.href = '/onboarding?fitbit=error';
+        });
+      }
+    }
+  }, []);
 
   useEffect(() => {
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
-
-    // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
-  // Still determining session state
-  if (session === undefined) {
+  useEffect(() => {
+    if (!session) return;
+    const path = window.location.pathname;
+    if (path === '/onboarding') return;
+    setCheckingOnboarding(true);
+    supabase
+      .from('user_integrations')
+      .select('strava_refresh_token, fitbit_refresh_token')
+      .eq('user_id', session.user.id)
+      .single()
+      .then(({ data }) => {
+        setOnboardingDone(!!(data?.strava_refresh_token && data?.fitbit_refresh_token));
+        setCheckingOnboarding(false);
+      });
+  }, [session]);
+
+  const handleOnboardingComplete = useCallback(() => {
+    setOnboardingDone(true);
+    window.history.replaceState({}, '', '/');
+  }, []);
+
+  if (session === undefined || checkingOnboarding) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
         <div style={{ color: 'var(--text3)', fontSize: 14 }}>Loading...</div>
@@ -75,8 +114,11 @@ export default function App() {
     );
   }
 
-  if (!session) {
-    return <LoginScreen />;
+  if (!session) return <LoginScreen />;
+
+  const path = window.location.pathname;
+  if (!onboardingDone || path === '/onboarding') {
+    return <Onboarding session={session} onComplete={handleOnboardingComplete} />;
   }
 
   return (

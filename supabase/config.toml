@@ -1,0 +1,44 @@
+
+[functions.sync-strava]
+enabled = true
+verify_jwt = true
+import_map = "./functions/sync-strava/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/sync-strava/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/sync-strava/*.html" ]
+
+[functions.sync-fitbit]
+enabled = true
+verify_jwt = true
+import_map = "./functions/sync-fitbit/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/sync-fitbit/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/sync-fitbit/*.html" ]
+
+[functions.strava-callback]
+enabled = true
+verify_jwt = true
+import_map = "./functions/strava-callback/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/strava-callback/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/strava-callback/*.html" ]
+
+[functions.fitbit-callback]
+enabled = true
+verify_jwt = true
+import_map = "./functions/fitbit-callback/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/fitbit-callback/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/fitbit-callback/*.html" ]
