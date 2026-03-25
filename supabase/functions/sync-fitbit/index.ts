@@ -12,6 +12,12 @@ const supabase = createClient(
 const FITBIT_CLIENT_ID     = Deno.env.get('FITBIT_CLIENT_ID')!;
 const FITBIT_CLIENT_SECRET = Deno.env.get('FITBIT_CLIENT_SECRET')!;
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 async function refreshFitbitToken(integration: any) {
   const credentials = btoa(`${FITBIT_CLIENT_ID}:${FITBIT_CLIENT_SECRET}`);
   const res = await fetch(FITBIT_TOKEN_URL, {
@@ -57,7 +63,6 @@ async function syncUser(integration: any) {
     token = await refreshFitbitToken(integration);
   }
 
-  // Sync yesterday and today
   const dates = [];
   for (let i = 1; i >= 0; i--) {
     const d = new Date();
@@ -77,27 +82,26 @@ async function syncUser(integration: any) {
       const summary  = activities?.summary || {};
       const weight   = weightData?.weight?.[0];
       const sleep    = sleepData?.sleep?.[0];
-      const sleepSum = sleepData?.summary;
 
       const row: any = {
-        user_id:           integration.user_id,
+        user_id:            integration.user_id,
         date,
-        calories_out:      summary.caloriesOut || null,
-        steps:             summary.steps       || null,
-        fairly_active_min: summary.fairlyActiveMinutes || null,
-        very_active_min:   summary.veryActiveMinutes   || null,
+        calories_out:       summary.caloriesOut || null,
+        steps:              summary.steps       || null,
+        fairly_active_min:  summary.fairlyActiveMinutes  || null,
+        very_active_min:    summary.veryActiveMinutes    || null,
         lightly_active_min: summary.lightlyActiveMinutes || null,
-        sedentary_min:     summary.sedentaryMinutes    || null,
-        weight_kg:         weight?.weight  || null,
-        bmi:               weight?.bmi     || null,
-        minutes_asleep:    sleep?.minutesAsleep    || null,
-        minutes_awake:     sleep?.minutesAwake     || null,
-        time_in_bed:       sleep?.timeInBed        || null,
-        efficiency:        sleep?.efficiency       || null,
-        restless_count:    sleep?.restlessCount    || null,
-        restless_duration: sleep?.restlessDuration || null,
-        sleep_start_time:  sleep?.startTime        || null,
-        sleep_end_time:    sleep?.endTime          || null,
+        sedentary_min:      summary.sedentaryMinutes     || null,
+        weight_kg:          weight?.weight  || null,
+        bmi:                weight?.bmi     || null,
+        minutes_asleep:     sleep?.minutesAsleep    || null,
+        minutes_awake:      sleep?.minutesAwake     || null,
+        time_in_bed:        sleep?.timeInBed        || null,
+        efficiency:         sleep?.efficiency       || null,
+        restless_count:     sleep?.restlessCount    || null,
+        restless_duration:  sleep?.restlessDuration || null,
+        sleep_start_time:   sleep?.startTime        || null,
+        sleep_end_time:     sleep?.endTime          || null,
       };
 
       const { error } = await supabase
@@ -107,7 +111,7 @@ async function syncUser(integration: any) {
       if (error) throw new Error(`fitbit_daily upsert failed: ${error.message}`);
       synced++;
 
-      await new Promise(r => setTimeout(r, 500)); // rate limit buffer
+      await new Promise(r => setTimeout(r, 500));
     } catch (e: any) {
       console.error(`Failed to sync Fitbit for ${date}: ${e.message}`);
     }
@@ -116,7 +120,11 @@ async function syncUser(integration: any) {
   return { synced };
 }
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS });
+  }
+
   try {
     const { data: integrations, error } = await supabase
       .from('user_integrations')
@@ -125,7 +133,9 @@ Deno.serve(async (_req) => {
 
     if (error) throw error;
     if (!integrations || integrations.length === 0) {
-      return new Response(JSON.stringify({ message: 'No users with Fitbit connected' }), { status: 200 });
+      return new Response(JSON.stringify({ message: 'No users with Fitbit connected' }), {
+        status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      });
     }
 
     const results = [];
@@ -139,10 +149,12 @@ Deno.serve(async (_req) => {
     }
 
     return new Response(JSON.stringify({ results }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       status: 200,
     });
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    });
   }
 });

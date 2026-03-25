@@ -12,7 +12,12 @@ const supabase = createClient(
 const STRAVA_CLIENT_ID     = Deno.env.get('STRAVA_CLIENT_ID')!;
 const STRAVA_CLIENT_SECRET = Deno.env.get('STRAVA_CLIENT_SECRET')!;
 
-// ── HR Zone boundaries (can be made per-user later) ───────────────────────────
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 const HR_ZONES = { z1Max: 114, z2Max: 132, z3Max: 150, z4Max: 168 };
 
 function calculateZones(hrStream: number[]) {
@@ -30,10 +35,7 @@ function calculateZones(hrStream: number[]) {
 
 function calculateEffortScore(z1: number, z2: number, z3: number, z4: number, z5: number, outputKj: number) {
   const n = (v: number) => v || 0;
-  const score = (
-    -0.599 * n(z1) + -0.134 * n(z2) + 0.210 * n(z3) +
-     0.745 * n(z4) +  0.766 * n(z5) + 0.1268 * n(outputKj) - 2.71
-  );
+  const score = -0.599*n(z1) + -0.134*n(z2) + 0.210*n(z3) + 0.745*n(z4) + 0.766*n(z5) + 0.1268*n(outputKj) - 2.71;
   return Math.round(Math.max(0, score) * 10) / 10;
 }
 
@@ -59,27 +61,22 @@ async function refreshStravaToken(integration: any) {
   });
   if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
   const json = await res.json();
-
   await supabase.from('user_integrations').update({
     strava_access_token:  json.access_token,
     strava_refresh_token: json.refresh_token,
     strava_expires_at:    json.expires_at,
     updated_at:           new Date().toISOString(),
   }).eq('user_id', integration.user_id);
-
   return json.access_token;
 }
 
 async function syncUser(integration: any) {
   const now = Math.floor(Date.now() / 1000);
   let token = integration.strava_access_token;
-
-  // Refresh token if expired or expiring within 5 minutes
   if (!token || now >= (integration.strava_expires_at || 0) - 300) {
     token = await refreshStravaToken(integration);
   }
 
-  // Get existing strava IDs to avoid duplicates
   const { data: existing } = await supabase
     .from('workouts')
     .select('strava_id')
@@ -88,7 +85,6 @@ async function syncUser(integration: any) {
 
   const existingIds = new Set((existing || []).map((r: any) => String(r.strava_id)));
 
-  // Fetch activities from Strava
   const activities: any[] = [];
   let page = 1;
   while (true) {
@@ -107,7 +103,6 @@ async function syncUser(integration: any) {
   const newActivities = activities.filter((a: any) => !existingIds.has(String(a.id)));
   if (newActivities.length === 0) return { synced: 0 };
 
-  // Sort oldest first
   newActivities.sort((a: any, b: any) => new Date(a.start_date_local).getTime() - new Date(b.start_date_local).getTime());
 
   const rows = [];
@@ -123,7 +118,6 @@ async function syncUser(integration: any) {
     let z1 = null, z2 = null, z3 = null, z4 = null, z5 = null, effortScore = null;
 
     if (type === 'cycling') {
-      // Fetch calories
       const detailRes = await fetch(`${STRAVA_API}/activities/${a.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -131,8 +125,6 @@ async function syncUser(integration: any) {
         const detail = await detailRes.json();
         if (detail.calories) calories = Math.round(detail.calories);
       }
-
-      // Fetch HR stream
       if (a.has_heartrate) {
         const hrRes = await fetch(`${STRAVA_API}/activities/${a.id}/streams?keys=heartrate&key_by_type=true`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -149,36 +141,32 @@ async function syncUser(integration: any) {
           }
         }
       }
-
-      await new Promise(r => setTimeout(r, 500)); // be polite to rate limits
+      await new Promise(r => setTimeout(r, 500));
     }
 
     rows.push({
-      user_id:       integration.user_id,
-      date,
-      title,
-      type,
+      user_id: integration.user_id, date, title, type,
       duration_min:  a.moving_time ? Math.round(a.moving_time / 60) : null,
-      calories,
-      output_kj:     outputKj,
+      calories, output_kj: outputKj,
       avg_cadence:   a.average_cadence ? Math.round(a.average_cadence * 10) / 10 : null,
       avg_resistance: null,
       hr_z1: z1, hr_z2: z2, hr_z3: z3, hr_z4: z4, hr_z5: z5,
-      effort_score:  effortScore,
-      instructor,
-      strava_id:     String(a.id),
+      effort_score: effortScore, instructor,
+      strava_id: String(a.id),
     });
   }
 
   const { error } = await supabase.from('workouts').upsert(rows, { onConflict: 'strava_id', ignoreDuplicates: true });
   if (error) throw new Error(`Workouts upsert failed: ${error.message}`);
-
   return { synced: rows.length };
 }
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS });
+  }
+
   try {
-    // Get all users with Strava tokens
     const { data: integrations, error } = await supabase
       .from('user_integrations')
       .select('*')
@@ -186,7 +174,9 @@ Deno.serve(async (_req) => {
 
     if (error) throw error;
     if (!integrations || integrations.length === 0) {
-      return new Response(JSON.stringify({ message: 'No users with Strava connected' }), { status: 200 });
+      return new Response(JSON.stringify({ message: 'No users with Strava connected' }), {
+        status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      });
     }
 
     const results = [];
@@ -200,10 +190,12 @@ Deno.serve(async (_req) => {
     }
 
     return new Response(JSON.stringify({ results }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       status: 200,
     });
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    });
   }
 });
