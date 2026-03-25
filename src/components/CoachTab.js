@@ -24,33 +24,37 @@ export default function CoachTab({ userId }) {
 
   useEffect(() => { loadReport(); }, [loadReport]);
 
-  const handleGenerate = async () => {
-    setGenerating(true);
-    setError(null);
-    try {
-      // Get fresh session token for the API call
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+const handleGenerate = async () => {
+  setGenerating(true);
+  setError(null);
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(
+      'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1/claude-proxy',
+      {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
           messages: [{ role: 'user', content: 'Generate a fitness coach report.' }],
+          max_tokens: 1000,
         }),
-      });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
-      const reportText = data.content?.[0]?.text || '';
-      await saveCoachReport(userId, reportText);
-      setReport(reportText);
-      setUpdatedAt(new Date().toISOString());
-    } catch (e) {
-      setError(`Failed to generate report: ${e.message}`);
-    } finally {
-      setGenerating(false);
-    }
-  };
+      }
+    );
+    if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
+    const data = await res.json();
+    const reportText = data.text || '';
+    await saveCoachReport(userId, reportText);
+    setReport(reportText);
+    setUpdatedAt(new Date().toISOString());
+  } catch (e) {
+    setError(`Failed to generate report: ${e.message}`);
+  } finally {
+    setGenerating(false);
+  }
+};
 
   const renderReport = (text) => {
     if (!text) return null;
