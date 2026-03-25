@@ -182,7 +182,8 @@ export default function CoachTab({ userId }) {
           body: JSON.stringify({
             messages: [{ role: 'user', content: prompt }],
             max_tokens: 1500,
-          }),
+            system: 'You are a personal fitness coach. Analyze the real athlete data provided and write a coaching report following the exact format and instructions in the message. Do not invent fictional data or clients.',
+        }),
         }
       );
       if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
