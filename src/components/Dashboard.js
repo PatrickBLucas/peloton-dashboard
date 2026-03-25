@@ -291,7 +291,7 @@ export default function Dashboard({ session, onLogout }) {
           <>
             {tab === 'overview'  && <OverviewTab data={data} />}
             {tab === 'workouts'  && <WorkoutsTab data={data} />}
-            {tab === 'stats'     && <StatsTab data={data} />}
+            {tab === 'stats'     && <StatsTab data={data} userId={userId} />}
             {tab === '108'       && <TrackerTab data={data} />}
             {tab === 'foodlog'   && <FoodLogTab data={data} userId={userId} />}
             {tab === 'bestrides' && <BestRidesTab data={data} />}
