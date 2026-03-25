@@ -1,11 +1,9 @@
 // supabase/functions/claude-proxy/index.ts
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
-const SUPABASE_URL      = Deno.env.get('SUPABASE_URL')!;
-const SB_SERVICE_KEY    = Deno.env.get('SB_SERVICE_ROLE_KEY')!;
-
-const supabase = createClient(SUPABASE_URL, SB_SERVICE_KEY);
+const ANTHROPIC_API_KEY  = Deno.env.get('ANTHROPIC_API_KEY')!;
+const SUPABASE_URL        = Deno.env.get('SUPABASE_URL')!;
+const SUPABASE_ANON_KEY   = Deno.env.get('SUPABASE_ANON_KEY')!;
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin':  '*',
@@ -14,7 +12,6 @@ const CORS_HEADERS = {
 };
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS });
   }
@@ -23,16 +20,17 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS });
   }
 
-  // Verify the user is authenticated
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
     return new Response('Unauthorized', { status: 401, headers: CORS_HEADERS });
   }
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser(
-    authHeader.replace('Bearer ', '')
-  );
+  // Use anon client with the user's token to verify identity
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  });
 
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     return new Response('Unauthorized', { status: 401, headers: CORS_HEADERS });
   }
