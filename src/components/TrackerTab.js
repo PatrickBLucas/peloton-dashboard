@@ -2,26 +2,33 @@
 import { useMemo } from 'react';
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
-const TARGET_HOURS = 10;
+const TARGET_HOURS   = 10;
 const TARGET_MINUTES = TARGET_HOURS * 60;
 
 export default function TrackerTab({ data }) {
-  const { tracker, workouts } = data;
+  const { workouts } = data;
 
-  const now = new Date();
+  const now        = new Date();
   const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
+  const monthEnd   = endOfMonth(now);
 
-  // This month's activities from tracker sheet
+  // All workouts this month count toward the 10-8 goal
   const thisMonthActivities = useMemo(() => {
-    return tracker.filter(t => t.date && isWithinInterval(t.date, { start: monthStart, end: monthEnd }));
-  }, [tracker, monthStart, monthEnd]);
+    return workouts
+      .filter(w => w.date && isWithinInterval(w.date, { start: monthStart, end: monthEnd }))
+      .sort((a, b) => a.date - b.date)
+      .map(w => ({
+        date:        w.date,
+        description: `Peloton ${w.type}`,
+        minutes:     Math.round(w.durationMin || 0),
+      }));
+  }, [workouts, monthStart, monthEnd]);
 
   const totalMinutes = thisMonthActivities.reduce((s, t) => s + (t.minutes || 0), 0);
-  const totalHours = totalMinutes / 60;
-  const pctComplete = Math.min(100, (totalHours / TARGET_HOURS) * 100);
-  const hoursLeft = Math.max(0, TARGET_HOURS - totalHours);
-  const daysLeft = Math.max(0, Math.ceil((monthEnd - now) / (1000 * 60 * 60 * 24)));
+  const totalHours   = totalMinutes / 60;
+  const pctComplete  = Math.min(100, (totalHours / TARGET_HOURS) * 100);
+  const hoursLeft    = Math.max(0, TARGET_HOURS - totalHours);
+  const daysLeft     = Math.max(0, Math.ceil((monthEnd - now) / (1000 * 60 * 60 * 24)));
 
   const isOnTrack = daysLeft > 0
     ? (hoursLeft / daysLeft) * 7 <= TARGET_HOURS / 4
@@ -90,11 +97,7 @@ export default function TrackerTab({ data }) {
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>days left</div>
               </div>
               <div style={{ textAlign: 'center', minWidth: 60 }}>
-                <div style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 28,
-                  color: isOnTrack ? 'var(--green)' : 'var(--accent2)'
-                }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 28, color: isOnTrack ? 'var(--green)' : 'var(--accent2)' }}>
                   {isOnTrack ? 'ON' : 'OFF'}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>track</div>
@@ -125,7 +128,7 @@ export default function TrackerTab({ data }) {
               </thead>
               <tbody>
                 {thisMonthActivities.map((t, i) => {
-                  const hrs = Math.floor((t.minutes || 0) / 60);
+                  const hrs  = Math.floor((t.minutes || 0) / 60);
                   const mins = (t.minutes || 0) % 60;
                   return (
                     <tr key={i}>
@@ -155,21 +158,13 @@ export default function TrackerTab({ data }) {
         </div>
       </div>
 
-      {/* Note about email */}
       <div style={{
-        marginTop: 16,
-        padding: '14px 18px',
-        background: 'var(--bg2)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        fontSize: 12,
-        color: 'var(--text2)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
+        marginTop: 16, padding: '14px 18px', background: 'var(--bg2)',
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+        fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 10,
       }}>
-        <span style={{ color: 'var(--accent)', fontSize: 16 }}>📧</span>
-        The end-of-month email report is handled by your Google Apps Script trigger in the spreadsheet. No changes needed there.
+        <span style={{ color: 'var(--accent)', fontSize: 16 }}>ℹ️</span>
+        All Peloton activities this month count toward your 10-hour goal — rides, walks, meditations and all.
       </div>
     </>
   );
