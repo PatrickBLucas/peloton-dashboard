@@ -415,6 +415,7 @@ export async function estimateNutrition(messages) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
+        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtdGV2Zmxmcnlqa3Vka2NwbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNzA3NzgsImV4cCI6MjA4OTk0Njc3OH0.9riWHdjPggS9so5VXzcOmlQ-gsAREzZhfRmNAEEe2Rw',
       },
       body: JSON.stringify({
         messages,
@@ -427,7 +428,6 @@ export async function estimateNutrition(messages) {
   if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
   const data = await res.json();
 
-  // Parse JSON from Claude's response
   try {
     const clean = data.text.replace(/```json|```/g, '').trim();
     return JSON.parse(clean);

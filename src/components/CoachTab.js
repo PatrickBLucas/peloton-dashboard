@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { fetchCoachReport, saveCoachReport } from '../api/supabase';
 import { supabase } from '../lib/supabase';
 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtdGV2Zmxmcnlqa3Vka2NwbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNzA3NzgsImV4cCI6MjA4OTk0Njc3OH0.9riWHdjPggS9so5VXzcOmlQ-gsAREzZhfRmNAEEe2Rw';
+
 export default function CoachTab({ userId }) {
   const [report, setReport]         = useState(null);
   const [updatedAt, setUpdatedAt]   = useState(null);
@@ -24,37 +26,38 @@ export default function CoachTab({ userId }) {
 
   useEffect(() => { loadReport(); }, [loadReport]);
 
-const handleGenerate = async () => {
-  setGenerating(true);
-  setError(null);
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(
-      'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1/claude-proxy',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: 'Generate a fitness coach report.' }],
-          max_tokens: 1000,
-        }),
-      }
-    );
-    if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
-    const data = await res.json();
-    const reportText = data.text || '';
-    await saveCoachReport(userId, reportText);
-    setReport(reportText);
-    setUpdatedAt(new Date().toISOString());
-  } catch (e) {
-    setError(`Failed to generate report: ${e.message}`);
-  } finally {
-    setGenerating(false);
-  }
-};
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1/claude-proxy',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey':        SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: 'Generate a fitness coach report.' }],
+            max_tokens: 1000,
+          }),
+        }
+      );
+      if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
+      const data = await res.json();
+      const reportText = data.text || '';
+      await saveCoachReport(userId, reportText);
+      setReport(reportText);
+      setUpdatedAt(new Date().toISOString());
+    } catch (e) {
+      setError(`Failed to generate report: ${e.message}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const renderReport = (text) => {
     if (!text) return null;
