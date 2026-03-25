@@ -405,16 +405,33 @@ export function computeSleepStats(fitbitData) {
 // ── Claude AI nutrition estimate ──────────────────────────────────────────────
 // Calls the Anthropic API directly from the browser (no Apps Script proxy needed)
 export async function estimateNutrition(messages) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages,
-    }),
-  });
-  if (!response.ok) throw new Error(`Claude API error: ${response.status}`);
-  const data = await response.json();
-  return data.content?.[0]?.text || null;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+
+  const res = await fetch(
+    'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1/claude-proxy',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        messages,
+        system: 'You are a nutrition expert. When given a food description or photo, respond with a JSON object containing: description (string), calories (number), protein (number in grams), carbs (number in grams), fat (number in grams). Respond with JSON only, no other text.',
+        max_tokens: 500,
+      }),
+    }
+  );
+
+  if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
+  const data = await res.json();
+
+  // Parse JSON from Claude's response
+  try {
+    const clean = data.text.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch {
+    throw new Error('Failed to parse nutrition estimate');
+  }
 }
