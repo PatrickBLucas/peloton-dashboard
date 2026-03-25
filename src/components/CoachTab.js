@@ -3,6 +3,141 @@ import { fetchCoachReport, saveCoachReport } from '../api/supabase';
 import { supabase } from '../lib/supabase';
 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtdGV2Zmxmcnlqa3Vka2NwbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNzA3NzgsImV4cCI6MjA4OTk0Njc3OH0.9riWHdjPggS9so5VXzcOmlQ-gsAREzZhfRmNAEEe2Rw';
+const KG_TO_LBS = 2.20462;
+
+function toDateStr(d) {
+  const dt = d instanceof Date ? d : new Date(d);
+  return dt.toISOString().split('T')[0];
+}
+
+async function fetchLast4WeeksData(userId) {
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - 28);
+  const cutoffStr = toDateStr(cutoff);
+
+  const [{ data: workouts }, { data: fitbit }, { data: weightData }] = await Promise.all([
+    supabase
+      .from('workouts')
+      .select('date, title, type, duration_min, calories, output_kj, hr_z1, hr_z2, hr_z3, hr_z4, hr_z5, effort_score, instructor')
+      .eq('user_id', userId)
+      .gte('date', cutoffStr)
+      .order('date', { ascending: true }),
+    supabase
+      .from('fitbit_daily')
+      .select('date, calories_out, steps, very_active_min, fairly_active_min, weight_kg, minutes_asleep, efficiency')
+      .eq('user_id', userId)
+      .gte('date', cutoffStr)
+      .order('date', { ascending: true }),
+    supabase
+      .from('fitbit_daily')
+      .select('date, weight_kg')
+      .eq('user_id', userId)
+      .not('weight_kg', 'is', null)
+      .order('date', { ascending: false })
+      .limit(1),
+  ]);
+
+  return { workouts: workouts || [], fitbit: fitbit || [], latestWeight: weightData?.[0] || null };
+}
+
+function buildPrompt(workouts, fitbit, latestWeight) {
+  const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+  const cycling = workouts.filter(w => w.type === 'cycling');
+  const totalRides = cycling.length;
+  const totalMinutes = workouts.reduce((s, w) => s + (w.duration_min || 0), 0);
+  const avgOutput = totalRides > 0
+    ? Math.round(cycling.reduce((s, w) => s + (w.output_kj || 0), 0) / totalRides)
+    : 0;
+  const avgEffort = totalRides > 0
+    ? (cycling.reduce((s, w) => s + (w.effort_score || 0), 0) / totalRides).toFixed(1)
+    : 0;
+  const totalZ4Z5 = cycling.reduce((s, w) => s + (w.hr_z4 || 0) + (w.hr_z5 || 0), 0).toFixed(1);
+
+  // Rest days
+  const rideDates = new Set(cycling.map(w => w.date));
+  let restDays = 0;
+  const sortedDates = [...rideDates].sort();
+  for (let i = 1; i < sortedDates.length; i++) {
+    const gap = (new Date(sortedDates[i]) - new Date(sortedDates[i-1])) / 86400000;
+    restDays += gap - 1;
+  }
+  const avgRestBetweenRides = sortedDates.length > 1
+    ? (restDays / (sortedDates.length - 1)).toFixed(1)
+    : 'N/A';
+
+  // Weight
+  const currentWeightLbs = latestWeight?.weight_kg
+    ? Math.round(latestWeight.weight_kg * KG_TO_LBS * 10) / 10
+    : null;
+  const weightEntries = fitbit.filter(d => d.weight_kg);
+  const oldestWeight = weightEntries.length > 0 ? weightEntries[0] : null;
+  const weightChange = (oldestWeight && latestWeight)
+    ? Math.round((latestWeight.weight_kg - oldestWeight.weight_kg) * KG_TO_LBS * 10) / 10
+    : null;
+
+  // Fitbit averages
+  const fitbitWithSteps = fitbit.filter(d => d.steps > 0);
+  const avgSteps = fitbitWithSteps.length > 0
+    ? Math.round(fitbitWithSteps.reduce((s, d) => s + d.steps, 0) / fitbitWithSteps.length)
+    : 0;
+  const fitbitWithSleep = fitbit.filter(d => d.minutes_asleep > 0);
+  const avgSleep = fitbitWithSleep.length > 0
+    ? (fitbitWithSleep.reduce((s, d) => s + d.minutes_asleep, 0) / fitbitWithSleep.length / 60).toFixed(1)
+    : null;
+  const avgEfficiency = fitbitWithSleep.length > 0
+    ? Math.round(fitbitWithSleep.reduce((s, d) => s + (d.efficiency || 0), 0) / fitbitWithSleep.length)
+    : null;
+
+  // Top instructors
+  const instructorCounts = {};
+  cycling.forEach(w => {
+    if (w.instructor) instructorCounts[w.instructor] = (instructorCounts[w.instructor] || 0) + 1;
+  });
+  const topInstructors = Object.entries(instructorCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name, count]) => `${name} (${count}x)`)
+    .join(', ');
+
+  // Recent rides list
+  const recentRides = cycling.slice(-7).map(w =>
+    `  ${w.date}: ${w.title} — output: ${w.output_kj || 0}kJ, effort: ${w.effort_score || 'N/A'}, Z4+Z5: ${((w.hr_z4 || 0) + (w.hr_z5 || 0)).toFixed(1)}min`
+  ).join('\n');
+
+  return `You are a personal fitness coach reviewing a 4-week performance summary for a male athlete (age 43, height 6'0"). Today is ${today}.
+
+Here is the data for the last 28 days:
+
+WORKOUTS:
+- Total activities: ${workouts.length} (${totalRides} cycling rides)
+- Total active time: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m
+- Average output per ride: ${avgOutput} kJ
+- Average effort score: ${avgEffort}
+- Total Z4+Z5 time: ${totalZ4Z5} minutes
+- Average rest days between rides: ${avgRestBetweenRides}
+- Top instructors: ${topInstructors || 'N/A'}
+
+RECENT RIDES (last 7):
+${recentRides || '  No recent rides'}
+
+BODY & HEALTH:
+- Current weight: ${currentWeightLbs ? `${currentWeightLbs} lbs` : 'unknown'}
+- Weight change over period: ${weightChange !== null ? `${weightChange > 0 ? '+' : ''}${weightChange} lbs` : 'unknown'}
+- Average daily steps: ${avgSteps.toLocaleString()}
+- Average sleep: ${avgSleep ? `${avgSleep} hours` : 'unknown'}
+- Average sleep efficiency: ${avgEfficiency ? `${avgEfficiency}%` : 'unknown'}
+
+Write a concise coaching report with exactly 5 sections using this format:
+1. **Overall Summary** — brief overview of the 4-week period
+2. **Workout Performance** — analyze output, effort scores, HR zones, intensity trends
+3. **Body & Recovery** — weight trend, sleep quality, rest between rides
+4. **What's Working** — specific positives to reinforce
+5. **Next Week's Focus** — 2-3 concrete, actionable goals
+
+Keep each section to 3-5 sentences. Be direct and specific — reference actual numbers from the data.`;
+}
 
 export default function CoachTab({ userId }) {
   const [report, setReport]         = useState(null);
@@ -30,6 +165,10 @@ export default function CoachTab({ userId }) {
     setGenerating(true);
     setError(null);
     try {
+      // Fetch real data
+      const { workouts, fitbit, latestWeight } = await fetchLast4WeeksData(userId);
+      const prompt = buildPrompt(workouts, fitbit, latestWeight);
+
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
         'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1/claude-proxy',
@@ -41,8 +180,8 @@ export default function CoachTab({ userId }) {
             'apikey':        SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Generate a fitness coach report.' }],
-            max_tokens: 1000,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 1500,
           }),
         }
       );
