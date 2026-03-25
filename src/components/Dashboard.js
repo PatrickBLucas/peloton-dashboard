@@ -1,5 +1,6 @@
 // src/components/Dashboard.js
 import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
 import {
   fetchWorkouts, fetchFitbitData, fetchWeight, fetch108, fetchFoodLog,
   computeStats, fetchGoalWeight, saveGoalWeight
@@ -13,6 +14,9 @@ import FoodLogTab from './FoodLogTab';
 import BestRidesTab from './BestRidesTab';
 import CoachTab from './CoachTab';
 import StatsTab from './StatsTab';
+
+const SUPABASE_FUNCTIONS_URL = 'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1';
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtdGV2Zmxmcnlqa3Vka2NwbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNzA3NzgsImV4cCI6MjA4OTk0Njc3OH0.9riWHdjPggS9so5VXzcOmlQ-gsAREzZhfRmNAEEe2Rw';
 
 const BOTTOM_TABS = [
   { id: 'overview',  label: 'Home',    icon: 'home' },
@@ -79,15 +83,17 @@ function NavIcon({ icon, active }) {
 export default function Dashboard({ session, onLogout }) {
   const userId = session.user.id;
 
-  const [tab, setTab] = useState('overview');
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [data, setData] = useState(null);
+  const [tab, setTab]               = useState('overview');
+  const [menuOpen, setMenuOpen]     = useState(false);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState(null);
+  const [data, setData]             = useState(null);
   const [goalWeight, setGoalWeight] = useState(180);
   const [editingGoal, setEditingGoal] = useState(false);
-  const [goalInput, setGoalInput] = useState('');
+  const [goalInput, setGoalInput]   = useState('');
   const [savingGoal, setSavingGoal] = useState(false);
+  const [syncing, setSyncing]       = useState(null); // 'strava' | 'fitbit' | null
+  const [syncMsg, setSyncMsg]       = useState(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -127,9 +133,57 @@ export default function Dashboard({ session, onLogout }) {
     }
   }, [userId, goalInput, loadData]);
 
+  const handleSync = useCallback(async (type) => {
+    setSyncing(type);
+    setSyncMsg(null);
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/sync-${type}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentSession.access_token}`,
+          'apikey': ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+      });
+      const json = await res.json();
+      const synced = json.results?.[0]?.synced ?? 0;
+      setSyncMsg({ type: 'success', text: `${type === 'strava' ? 'Strava' : 'Fitbit'} sync complete — ${synced} new ${type === 'strava' ? 'activities' : 'days'} added. Reloading...` });
+      setTimeout(async () => {
+        await loadData();
+        setSyncMsg(null);
+      }, 2000);
+    } catch (e) {
+      setSyncMsg({ type: 'error', text: `Sync failed: ${e.message}` });
+    } finally {
+      setSyncing(null);
+    }
+  }, [loadData]);
+
   const syncTime = data
     ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
+
+  const SyncButtons = ({ mobile = false }) => (
+    <>
+      <button
+        className="sync-btn"
+        onClick={() => handleSync('fitbit')}
+        disabled={syncing !== null}
+        style={mobile ? { width: '100%' } : {}}
+      >
+        {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
+      </button>
+      <button
+        className="sync-btn"
+        onClick={() => handleSync('strava')}
+        disabled={syncing !== null}
+        style={mobile ? { width: '100%' } : {}}
+      >
+        {syncing === 'strava' ? '...' : '⟳ Strava'}
+      </button>
+    </>
+  );
 
   return (
     <div className="dashboard">
@@ -162,9 +216,7 @@ export default function Dashboard({ session, onLogout }) {
                 Goal: {goalWeight} lbs
               </button>
             )}
-            {/* Sync buttons disabled until Edge Functions are ready */}
-            <button className="sync-btn" disabled title="Coming soon">⟳ Fitbit</button>
-            <button className="sync-btn" disabled title="Coming soon">⟳ Strava</button>
+            <SyncButtons />
             {syncTime && <span className="sync-time">loaded {syncTime}</span>}
             <button className="logout-btn" onClick={onLogout}>Sign out</button>
           </div>
@@ -204,8 +256,7 @@ export default function Dashboard({ session, onLogout }) {
               Goal: {goalWeight} lbs
             </button>
           )}
-          <button className="sync-btn" disabled title="Coming soon">⟳ Fitbit</button>
-          <button className="sync-btn" disabled title="Coming soon">⟳ Strava</button>
+          <SyncButtons mobile />
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
           <button className="logout-btn" onClick={onLogout}>Sign out</button>
         </div>
@@ -219,6 +270,10 @@ export default function Dashboard({ session, onLogout }) {
           </button>
         ))}
       </nav>
+
+      {syncMsg && (
+        <div className={`sync-banner ${syncMsg.type}`}>{syncMsg.text}</div>
+      )}
 
       <main className="main-content">
         {loading && (
