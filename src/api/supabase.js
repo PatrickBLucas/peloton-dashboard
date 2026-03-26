@@ -434,3 +434,11 @@ export async function estimateNutrition(messages) {
     throw new Error('Failed to parse nutrition estimate');
   }
 }
+
+export async function updateFoodLibraryItem(itemId, { name, unit }) {
+  const { error } = await supabase
+    .from('food_library')
+    .update({ name, unit })
+    .eq('id', itemId);
+  if (error) throw new Error(error.message);
+}
