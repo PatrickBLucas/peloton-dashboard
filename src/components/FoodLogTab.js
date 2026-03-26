@@ -216,7 +216,17 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
         <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
           <span style={{ color: 'var(--accent)' }}>{Math.round(item.calories * qty)} cal</span>
           {' · '}P:{Math.round(item.protein * qty)}g · C:{Math.round(item.carbs * qty)}g · F:{Math.round(item.fat * qty)}g
-          {' · '}per {item.unit} × {qty}
+          {(() => {
+  const match = item.unit.match(/(\d+(\.\d+)?)\s*g/i);
+  const unitGrams = match ? parseFloat(match[1]) : null;
+  const totalGrams = unitGrams ? Math.round(unitGrams * qty * 10) / 10 : null;
+  return (
+    <>
+      {' · '}per {item.unit} × {qty}
+      {totalGrams && qty !== 1 ? ` (${totalGrams}g)` : ''}
+    </>
+  );
+})()}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
