@@ -2,7 +2,7 @@ import { useState } from 'react';
 import WeightTab from './WeightTab';
 import CaloriesTab from './CaloriesTab';
 
-export default function StatsTab({ data }) {
+export default function StatsTab({ data, userId }) {
   const [sub, setSub] = useState('weight');
   return (
     <>
@@ -22,7 +22,7 @@ export default function StatsTab({ data }) {
           🔥 Calories
         </button>
       </div>
-      {sub === 'weight'   && <WeightTab data={data} />}
+      {sub === 'weight' && <WeightTab data={data} userId={userId} />}
       {sub === 'calories' && <CaloriesTab data={data} />}
     </>
   );
