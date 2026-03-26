@@ -3,16 +3,9 @@ import {
   appendFoodEntry, deleteFoodEntry, fetchFoodLog,
   fetchSavedMeals, saveMeal, deleteSavedMeal, updateSavedMeal,
   fetchFoodLibrary, saveFoodLibraryItem, deleteFoodLibraryItem,
-  estimateNutrition
+  updateFoodLibraryItem, estimateNutrition
 } from '../api/supabase';
 import { supabase } from '../lib/supabase';
-
-const SUPABASE_URL = 'https://hmtevflfryjkudkcpmac.supabase.co';
-
-async function updateFoodLibraryItem(itemId, { name, unit }) {
-  const { error } = await supabase.from('food_library').update({ name, unit }).eq('id', itemId);
-  if (error) throw new Error(error.message);
-}
 
 function todayStr() {
   const d = new Date();
@@ -160,6 +153,86 @@ function scaleToGrams(item, grams) {
   };
 }
 
+// ── Save to Library Modal ─────────────────────────────────────────────────────
+function SaveToLibraryModal({ item, libraryItems, userId, onSaved, onClose }) {
+  const [name, setName] = useState(item.description?.split(',')[0].trim() || '');
+  const [unit, setUnit] = useState(item.servingG ? `${item.servingG}g` : '1 serving');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Check for barcode duplicate
+  const duplicate = item.barcode
+    ? libraryItems.find(i => i.barcode === item.barcode)
+    : null;
+
+  const handleSave = async () => {
+    if (!name.trim() || !unit.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await saveFoodLibraryItem(userId, {
+        name: name.trim(),
+        unit: unit.trim(),
+        calories: item.calories,
+        protein:  item.protein,
+        carbs:    item.carbs,
+        fat:      item.fat,
+        barcode:  item.barcode || null,
+      });
+      onSaved(name.trim());
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputStyle = {
+    width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)',
+    borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '8px 10px', boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, width: '100%', maxWidth: 400 }}>
+        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Save to Library</div>
+        <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 16 }}>
+          {item.calories} cal · P:{item.protein}g · C:{item.carbs}g · F:{item.fat}g
+          {item.barcode && <span style={{ marginLeft: 6, color: 'var(--text3)' }}>· #{item.barcode}</span>}
+        </div>
+
+        {duplicate && (
+          <div style={{ padding: '10px 12px', background: 'rgba(255,160,0,0.1)', border: '1px solid rgba(255,160,0,0.4)', borderRadius: 4, marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>
+            This barcode already exists in your library as <strong>{duplicate.name}</strong>. Saving again will create a duplicate.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ flex: 2 }}>
+            <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Name</div>
+            <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} autoFocus placeholder="e.g. Greek Yogurt" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Unit</div>
+            <input value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle} placeholder="e.g. 100g" />
+          </div>
+        </div>
+
+        {error && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{error}</div>}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="sync-btn" onClick={handleSave} disabled={saving || !name.trim() || !unit.trim()} style={{ flex: 1, padding: 10 }}>
+            {saving ? '...' : 'Save to Library'}
+          </button>
+          <button onClick={onClose} style={{ flex: 1, padding: 10, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Library Item Row ──────────────────────────────────────────────────────────
 function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
   const [qty, setQty] = useState(1);
@@ -216,17 +289,13 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
         <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
           <span style={{ color: 'var(--accent)' }}>{Math.round(item.calories * qty)} cal</span>
           {' · '}P:{Math.round(item.protein * qty)}g · C:{Math.round(item.carbs * qty)}g · F:{Math.round(item.fat * qty)}g
+          {' · '}per {item.unit} × {qty}
           {(() => {
-  const match = item.unit.match(/(\d+(\.\d+)?)\s*g/i);
-  const unitGrams = match ? parseFloat(match[1]) : null;
-  const totalGrams = unitGrams ? Math.round(unitGrams * qty * 10) / 10 : null;
-  return (
-    <>
-      {' · '}per {item.unit} × {qty}
-      {totalGrams && qty !== 1 ? ` (${totalGrams}g)` : ''}
-    </>
-  );
-})()}
+            const match = item.unit.match(/(\d+(\.\d+)?)\s*g/i);
+            const unitGrams = match ? parseFloat(match[1]) : null;
+            const totalGrams = unitGrams ? Math.round(unitGrams * qty * 10) / 10 : null;
+            return totalGrams && qty !== 1 ? ` (${totalGrams}g)` : '';
+          })()}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -253,17 +322,15 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   const [libraryItems, setLibraryItems] = useState([]);
   const [libraryLoaded, setLibraryLoaded] = useState(false);
   const [librarySearch, setLibrarySearch] = useState('');
-  const [savingToLibrary, setSavingToLibrary] = useState(null);
-  const [libItemName, setLibItemName] = useState('');
-  const [libItemUnit, setLibItemUnit] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
+  const [barcodeResult, setBarcodeResult] = useState(null);
+  const [saveLibraryModal, setSaveLibraryModal] = useState(null); // item to save
   const [msg, setMsg] = useState(null);
   const [manualFields, setManualFields] = useState({ description: '', calories: '', protein: '', carbs: '', fat: '' });
-  const [barcodeResult, setBarcodeResult] = useState(null);
 
   const totals = useMemo(() => ({
     calories: ingredients.reduce((s, i) => s + i.calories, 0),
@@ -274,11 +341,15 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
 
   const showMsg = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3000); };
 
+  const reloadLibrary = useCallback(async () => {
+    const items = await fetchFoodLibrary();
+    setLibraryItems(items);
+    setLibraryLoaded(true);
+  }, []);
+
   useEffect(() => {
-    if (!libraryLoaded) {
-      fetchFoodLibrary().then(items => { setLibraryItems(items); setLibraryLoaded(true); }).catch(() => {});
-    }
-  }, [libraryLoaded]);
+    if (!libraryLoaded) reloadLibrary();
+  }, [libraryLoaded, reloadLibrary]);
 
   const addFromLibrary = (item, qty) => {
     const q = Math.max(0.25, toNum(qty) || 1);
@@ -303,21 +374,6 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   const handleEditLibraryItem = async (itemId, { name, unit }) => {
     await updateFoodLibraryItem(itemId, { name, unit });
     setLibraryItems(prev => prev.map(i => i.id === itemId ? { ...i, name, unit } : i));
-  };
-
-  const handleSaveToLibrary = async () => {
-    if (!savingToLibrary || !libItemName.trim() || !libItemUnit.trim()) return;
-    try {
-      await saveFoodLibraryItem(userId, {
-        name: libItemName.trim(), unit: libItemUnit.trim(),
-        calories: savingToLibrary.calories, protein: savingToLibrary.protein,
-        carbs: savingToLibrary.carbs, fat: savingToLibrary.fat,
-      });
-      const items = await fetchFoodLibrary();
-      setLibraryItems(items);
-      setSavingToLibrary(null); setLibItemName(''); setLibItemUnit('');
-      showMsg('success', `"${libItemName}" saved to library!`);
-    } catch (e) { showMsg('error', e.message); }
   };
 
   const addIngredient = (item) => {
@@ -359,7 +415,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
       const [offResult, usdaResult] = await Promise.allSettled([lookupBarcode(barcode), lookupUSDABarcode(barcode)]);
       const result = (offResult.status === 'fulfilled' && offResult.value) ? offResult.value :
                      (usdaResult.status === 'fulfilled' && usdaResult.value) ? usdaResult.value : null;
-      if (result) setBarcodeResult(result);
+      if (result) setBarcodeResult({ ...result, barcode });
       else showMsg('error', 'Product not found.');
     } catch (e) { showMsg('error', 'Barcode lookup failed.'); }
     finally { setLookingUp(false); }
@@ -392,6 +448,20 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
 
   return (
     <div>
+      {saveLibraryModal && (
+        <SaveToLibraryModal
+          item={saveLibraryModal}
+          libraryItems={libraryItems}
+          userId={userId}
+          onSaved={(savedName) => {
+            setSaveLibraryModal(null);
+            reloadLibrary();
+            showMsg('success', `"${savedName}" saved to library!`);
+          }}
+          onClose={() => setSaveLibraryModal(null)}
+        />
+      )}
+
       {ingredients.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 14, padding: 12, background: 'var(--bg3)', borderRadius: 'var(--radius)' }}>
           {[['Cal', totals.calories, 'var(--accent)'], ['Pro', `${Math.round(totals.protein)}g`, 'var(--green)'], ['Carb', `${Math.round(totals.carbs)}g`, 'var(--blue)'], ['Fat', `${Math.round(totals.fat)}g`, 'var(--text2)']].map(([l, v, c]) => (
@@ -426,25 +496,6 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
             .map(item => (
               <LibraryItemRow key={item.id} item={item} onAdd={addFromLibrary} onDelete={handleDeleteLibraryItem} onEdit={handleEditLibraryItem} />
             ))}
-          {savingToLibrary && (
-            <div style={{ padding: 14, background: 'var(--bg3)', borderRadius: 'var(--radius)', border: '1px solid var(--accent)', marginTop: 10 }}>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>{savingToLibrary.description}</div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 3 }}>Name in library</div>
-                  <input value={libItemName} onChange={e => setLibItemName(e.target.value)} style={inputStyle} placeholder="e.g. Strawberry" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 3 }}>Unit label</div>
-                  <input value={libItemUnit} onChange={e => setLibItemUnit(e.target.value)} style={inputStyle} placeholder="e.g. 1 berry" />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="sync-btn" onClick={handleSaveToLibrary} disabled={!libItemName.trim() || !libItemUnit.trim()} style={{ flex: 1, padding: 10 }}>Save to Library</button>
-                <button onClick={() => setSavingToLibrary(null)} style={{ padding: '10px 14px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer' }}>Cancel</button>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -466,7 +517,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0, marginLeft: 8 }}>
                 <button className="sync-btn" onClick={() => addIngredient(r)} style={{ padding: '6px 12px', fontSize: 12 }}>+ Add</button>
-                <button onClick={() => { setSavingToLibrary(r); setLibItemName(r.description.split(',')[0].trim()); setLibItemUnit(`${r.servingG}g`); setSubMode('library'); }} style={{ padding: '4px 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text3)', cursor: 'pointer', fontSize: 10 }}>📚 Save</button>
+                <button onClick={() => setSaveLibraryModal(r)} style={{ padding: '4px 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text3)', cursor: 'pointer', fontSize: 10 }}>📚 Save</button>
               </div>
             </div>
           ))}
@@ -501,7 +552,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="sync-btn" onClick={() => { addIngredient(barcodeResult); setBarcodeResult(null); }} style={{ flex: 1, padding: 10, fontSize: 13 }}>+ Add</button>
-                    <button onClick={() => { setSavingToLibrary(barcodeResult); setLibItemName(barcodeResult.description.split(',')[0].trim()); setLibItemUnit(`${barcodeResult.servingG}g`); setSubMode('library'); setBarcodeResult(null); }}
+                    <button onClick={() => setSaveLibraryModal(barcodeResult)}
                       style={{ flex: 1, padding: 10, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>
                       📚 Save to Library
                     </button>

@@ -86,7 +86,7 @@ export async function fetchFitbitData(userId) {
     efficiency:       r.efficiency,
     restlessCount:    r.restless_count,
     restlessDuration: r.restless_duration,
-    caloriesConsumed: null, // food comes from food_log, not Fitbit
+    caloriesConsumed: null,
   }));
 }
 
@@ -260,6 +260,7 @@ export async function fetchFoodLibrary() {
     protein:  r.protein,
     carbs:    r.carbs,
     fat:      r.fat,
+    barcode:  r.barcode || null,
   }));
 }
 
@@ -274,6 +275,7 @@ export async function saveFoodLibraryItem(userId, item) {
       carbs:      item.carbs,
       fat:        item.fat,
       created_by: userId,
+      barcode:    item.barcode || null,
     });
   if (error) throw new Error(error.message);
 }
@@ -282,6 +284,14 @@ export async function deleteFoodLibraryItem(itemId) {
   const { error } = await supabase
     .from('food_library')
     .delete()
+    .eq('id', itemId);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateFoodLibraryItem(itemId, { name, unit }) {
+  const { error } = await supabase
+    .from('food_library')
+    .update({ name, unit })
     .eq('id', itemId);
   if (error) throw new Error(error.message);
 }
@@ -402,7 +412,6 @@ export function computeSleepStats(fitbitData) {
 }
 
 // ── Claude AI nutrition estimate ──────────────────────────────────────────────
-// Calls the Anthropic API directly from the browser (no Apps Script proxy needed)
 export async function estimateNutrition(messages) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
@@ -433,12 +442,4 @@ export async function estimateNutrition(messages) {
   } catch {
     throw new Error('Failed to parse nutrition estimate');
   }
-}
-
-export async function updateFoodLibraryItem(itemId, { name, unit }) {
-  const { error } = await supabase
-    .from('food_library')
-    .update({ name, unit })
-    .eq('id', itemId);
-  if (error) throw new Error(error.message);
 }
