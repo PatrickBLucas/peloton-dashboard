@@ -129,20 +129,20 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
   };
 
   const styles = {
+    container: { maxWidth: 600, margin: '0 auto', padding: '20px 40px' },
     input: { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 16, padding: '10px 12px', boxSizing: 'border-box' },
     label: { fontSize: 14, color: 'var(--text2)', marginBottom: 4, display: 'block' },
-    // THE FIX: High contrast close button
-    closeBtn: { 
-      background: 'rgba(255,255,255,0.05)', 
-      border: '1px solid var(--border)', 
-      color: '#fff', 
-      fontSize: '22px', 
-      cursor: 'pointer', 
-      borderRadius: '6px', 
-      width: '32px', 
-      height: '32px', 
-      display: 'flex', 
-      alignItems: 'center', 
+    closeBtn: {
+      background: 'rgba(255,255,255,0.05)',
+      border: '1px solid var(--border)',
+      color: '#fff',
+      fontSize: '22px',
+      cursor: 'pointer',
+      borderRadius: '6px',
+      width: '32px',
+      height: '32px',
+      display: 'flex',
+      alignItems: 'center',
       justifyContent: 'center',
       lineHeight: 0,
       transition: 'all 0.2s'
@@ -152,13 +152,13 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text2)' }}>Loading...</div>;
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={styles.container}>
       {/* HEADER SECTION */}
       <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <span className="section-title">SETTINGS</span>
-        
-        <button 
-          onClick={() => { if (onClose) onClose(); else console.log("onClose prop missing!"); }} 
+
+        <button
+          onClick={onClose}
           style={styles.closeBtn}
           onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.15)'}
           onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.05)'}
