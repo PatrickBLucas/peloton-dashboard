@@ -237,7 +237,16 @@ export default function Dashboard({ session, onLogout }) {
             {tab === 'foodlog'   && <FoodLogTab data={data} userId={userId} />}
             {tab === 'bestrides' && <BestRidesTab data={data} />}
             {tab === 'coach'     && <CoachTab userId={userId} />}
-            {tab === 'settings'  && <SettingsTab userId={userId} onSaved={loadData} />}
+            {tab === 'settings' && (
+  <SettingsTab
+    userId={userId}
+    onSaved={async () => {
+      await loadData();
+      setTab('overview');
+    }}
+    onClose={() => setTab('overview')}
+  />
+)}
           </>
         )}
       </main>
