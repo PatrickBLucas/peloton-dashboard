@@ -129,8 +129,8 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
   };
 
   const styles = {
-    input: { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14, padding: '10px 12px', boxSizing: 'border-box' },
-    label: { fontSize: 11, color: 'var(--text2)', marginBottom: 4, display: 'block' },
+    input: { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 16, padding: '10px 12px', boxSizing: 'border-box' },
+    label: { fontSize: 14, color: 'var(--text2)', marginBottom: 4, display: 'block' },
     // THE FIX: High contrast close button
     closeBtn: { 
       background: 'rgba(255,255,255,0.05)', 
@@ -154,7 +154,7 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
   return (
     <div style={{ position: 'relative' }}>
       {/* HEADER SECTION */}
-      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <span className="section-title">SETTINGS</span>
         
         <button 
@@ -170,9 +170,9 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
       {msg && <div className={`sync-banner ${msg.type}`} style={{ marginBottom: 16 }}>{msg.text}</div>}
 
       {/* FORM CARDS */}
-      <div className="chart-card" style={{ marginBottom: 16 }}>
+      <div className="chart-card" style={{ marginBottom: 24, padding: 20 }}>
         <div className="chart-title">Profile</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <label style={styles.label}>Name</label>
             <input value={form.name} onChange={e => updateForm({ name: e.target.value })} style={styles.input} />
@@ -181,12 +181,12 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
             <label style={styles.label}>Birthday</label>
             <input type="date" value={form.birthday} onChange={e => updateForm({ birthday: e.target.value })} style={styles.input} />
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1 }}>
+          <div className="form-row">
+            <div>
               <label style={styles.label}>Height (ft)</label>
               <input type="number" value={form.heightFt} onChange={e => updateForm({ heightFt: e.target.value })} style={styles.input} />
             </div>
-            <div style={{ flex: 1 }}>
+            <div>
               <label style={styles.label}>Height (in)</label>
               <input type="number" value={form.heightIn} onChange={e => updateForm({ heightIn: e.target.value })} style={styles.input} />
             </div>
@@ -194,18 +194,18 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
         </div>
       </div>
 
-      <div className="chart-card" style={{ marginBottom: 16 }}>
+      <div className="chart-card" style={{ marginBottom: 24, padding: 20 }}>
         <div className="chart-title">Heart Rate Zones</div>
-        <button className="sync-btn" onClick={handleEstimate} disabled={estimating} style={{ width: '100%', padding: 10, marginBottom: 14 }}>
+        <button className="sync-btn" onClick={handleEstimate} disabled={estimating} style={{ width: '100%', padding: 12, marginBottom: 20, fontSize: 16 }}>
           {estimating ? 'Estimating...' : '📊 Estimate Max HR'}
         </button>
 
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 16 }}>
           <label style={styles.label}>Max Heart Rate (bpm)</label>
           <input type="number" value={form.hrMax} onChange={e => handleHrMaxChange(e.target.value)} style={styles.input} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {[
             ['Z1 ceiling', form.z1Max, v => updateForm({ z1Max: v }), 'var(--blue)'],
             ['Z2 ceiling', form.z2Max, v => updateForm({ z2Max: v }), 'var(--green)'],
@@ -220,7 +220,7 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
         </div>
       </div>
 
-      <button className="sync-btn" onClick={handleSave} disabled={saving} style={{ width: '100%', padding: 14, fontSize: 15 }}>
+      <button className="sync-btn" onClick={handleSave} disabled={saving} style={{ width: '100%', padding: 16, fontSize: 18 }}>
         {saving ? 'Saving...' : 'Save Settings'}
       </button>
     </div>
