@@ -14,6 +14,7 @@ import FoodLogTab from './FoodLogTab';
 import BestRidesTab from './BestRidesTab';
 import CoachTab from './CoachTab';
 import StatsTab from './StatsTab';
+import SettingsTab from './SettingsTab';
 
 const SUPABASE_FUNCTIONS_URL = 'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtdGV2Zmxmcnlqa3Vka2NwbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNzA3NzgsImV4cCI6MjA4OTk0Njc3OH0.9riWHdjPggS9so5VXzcOmlQ-gsAREzZhfRmNAEEe2Rw';
@@ -89,10 +90,7 @@ export default function Dashboard({ session, onLogout }) {
   const [error, setError]           = useState(null);
   const [data, setData]             = useState(null);
   const [goalWeight, setGoalWeight] = useState(180);
-  const [editingGoal, setEditingGoal] = useState(false);
-  const [goalInput, setGoalInput]   = useState('');
-  const [savingGoal, setSavingGoal] = useState(false);
-  const [syncing, setSyncing]       = useState(null); // 'strava' | 'fitbit' | null
+  const [syncing, setSyncing]       = useState(null);
   const [syncMsg, setSyncMsg]       = useState(null);
 
   const loadData = useCallback(async () => {
@@ -119,20 +117,6 @@ export default function Dashboard({ session, onLogout }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleSaveGoal = useCallback(async () => {
-    if (!goalInput) return;
-    setSavingGoal(true);
-    try {
-      await saveGoalWeight(userId, parseFloat(goalInput));
-      setEditingGoal(false);
-      await loadData();
-    } catch (e) {
-      console.error('Failed to save goal', e);
-    } finally {
-      setSavingGoal(false);
-    }
-  }, [userId, goalInput, loadData]);
-
   const handleSync = useCallback(async (type) => {
     setSyncing(type);
     setSyncMsg(null);
@@ -149,10 +133,7 @@ export default function Dashboard({ session, onLogout }) {
       const json = await res.json();
       const synced = json.results?.[0]?.synced ?? 0;
       setSyncMsg({ type: 'success', text: `${type === 'strava' ? 'Strava' : 'Fitbit'} sync complete — ${synced} new ${type === 'strava' ? 'activities' : 'days'} added. Reloading...` });
-      setTimeout(async () => {
-        await loadData();
-        setSyncMsg(null);
-      }, 2000);
+      setTimeout(async () => { await loadData(); setSyncMsg(null); }, 2000);
     } catch (e) {
       setSyncMsg({ type: 'error', text: `Sync failed: ${e.message}` });
     } finally {
@@ -164,22 +145,14 @@ export default function Dashboard({ session, onLogout }) {
     ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
 
+  const navigateTo = (id) => { setTab(id); setMenuOpen(false); };
+
   const SyncButtons = ({ mobile = false }) => (
     <>
-      <button
-        className="sync-btn"
-        onClick={() => handleSync('fitbit')}
-        disabled={syncing !== null}
-        style={mobile ? { width: '100%' } : {}}
-      >
+      <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null} style={mobile ? { width: '100%' } : {}}>
         {syncing === 'fitbit' ? '...' : '⟳ Fitbit'}
       </button>
-      <button
-        className="sync-btn"
-        onClick={() => handleSync('strava')}
-        disabled={syncing !== null}
-        style={mobile ? { width: '100%' } : {}}
-      >
+      <button className="sync-btn" onClick={() => handleSync('strava')} disabled={syncing !== null} style={mobile ? { width: '100%' } : {}}>
         {syncing === 'strava' ? '...' : '⟳ Strava'}
       </button>
     </>
@@ -198,26 +171,9 @@ export default function Dashboard({ session, onLogout }) {
         </nav>
         <div className="topbar-right">
           <div className="topbar-actions desktop-actions">
-            {editingGoal ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input
-                  type="number" value={goalInput}
-                  onChange={e => setGoalInput(e.target.value)}
-                  placeholder={goalWeight}
-                  style={{ width: 70, padding: '5px 8px', background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-mono)' }}
-                  autoFocus
-                  onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); if (e.key === 'Escape') setEditingGoal(false); }}
-                />
-                <button className="sync-btn" onClick={handleSaveGoal} disabled={savingGoal}>{savingGoal ? '...' : 'Save'}</button>
-                <button className="logout-btn" onClick={() => setEditingGoal(false)}>Cancel</button>
-              </div>
-            ) : (
-              <button className="sync-btn" onClick={() => { setGoalInput(goalWeight.toString()); setEditingGoal(true); }} title="Set goal weight">
-                Goal: {goalWeight} lbs
-              </button>
-            )}
             <SyncButtons />
             {syncTime && <span className="sync-time">loaded {syncTime}</span>}
+            <button className="sync-btn" onClick={() => navigateTo('settings')}>⚙ Settings</button>
             <button className="logout-btn" onClick={onLogout}>Sign out</button>
           </div>
           <div className="topbar-overflow-tabs">
@@ -235,28 +191,13 @@ export default function Dashboard({ session, onLogout }) {
 
       {menuOpen && (
         <div className="mobile-menu">
-          {editingGoal ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 12, color: 'var(--text2)', textAlign: 'center' }}>Set goal weight (lbs)</div>
-              <input
-                type="number" value={goalInput}
-                onChange={e => setGoalInput(e.target.value)}
-                placeholder={goalWeight}
-                style={{ width: '100%', padding: '12px', background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 20, fontFamily: 'var(--font-mono)', textAlign: 'center', boxSizing: 'border-box' }}
-                autoFocus
-                onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); if (e.key === 'Escape') setEditingGoal(false); }}
-              />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="sync-btn" onClick={handleSaveGoal} disabled={savingGoal} style={{ flex: 1, padding: 12 }}>{savingGoal ? '...' : 'Save'}</button>
-                <button className="logout-btn" onClick={() => setEditingGoal(false)} style={{ flex: 1, padding: 12 }}>Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button className="sync-btn" onClick={() => { setGoalInput(goalWeight.toString()); setEditingGoal(true); }}>
-              Goal: {goalWeight} lbs
-            </button>
-          )}
           <SyncButtons mobile />
+          <button className="sync-btn" onClick={() => navigateTo('settings')} style={{ width: '100%' }}>
+            ⚙ Settings
+          </button>
+          <button className="sync-btn" onClick={() => navigateTo('108')} style={{ width: '100%' }}>
+            10-8 Tracker
+          </button>
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
           <button className="logout-btn" onClick={onLogout}>Sign out</button>
         </div>
@@ -291,11 +232,12 @@ export default function Dashboard({ session, onLogout }) {
           <>
             {tab === 'overview'  && <OverviewTab data={data} />}
             {tab === 'workouts'  && <WorkoutsTab data={data} />}
-            {tab === 'stats' && <StatsTab data={data} userId={userId} />}
+            {tab === 'stats'     && <StatsTab data={data} userId={userId} />}
             {tab === '108'       && <TrackerTab data={data} />}
             {tab === 'foodlog'   && <FoodLogTab data={data} userId={userId} />}
             {tab === 'bestrides' && <BestRidesTab data={data} />}
             {tab === 'coach'     && <CoachTab userId={userId} />}
+            {tab === 'settings'  && <SettingsTab userId={userId} onSaved={loadData} />}
           </>
         )}
       </main>
