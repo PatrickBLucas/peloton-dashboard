@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 const DEFAULT_ZONES = { z1Max: 114, z2Max: 132, z3Max: 150, z4Max: 168 };
@@ -38,7 +38,7 @@ async function estimateMaxHR(userId) {
   return { ageBased, hasZ5Data: workouts?.length > 0, z5Rides: workouts?.length || 0 };
 }
 
-export default function SettingsTab({ userId, onSaved, onClose }) {
+function SettingsTab({ userId, onSaved, onClose }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -226,3 +226,35 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
     </div>
   );
 }
+
+function ParentComponent() {
+  const [showSettings, setShowSettings] = useState(false);
+  const userId = '9d0f37ce-1726-4651-a262-ba5d8cc8b9ac'; // Replace with the actual user ID
+
+  const handleSave = () => {
+    // Logic to handle saving the settings
+    console.log('Settings saved');
+  };
+
+  const handleCloseSettings = () => {
+    // Logic to close the settings window
+    setShowSettings(false);
+  };
+
+  return (
+    <div>
+      {/* Other components and content */}
+      <button onClick={() => setShowSettings(true)}>Open Settings</button>
+
+      {showSettings && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)' }}>
+            <SettingsTab userId={userId} onSaved={handleSave} onClose={handleCloseSettings} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default ParentComponent;
