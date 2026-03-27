@@ -1,13 +1,18 @@
-// src/components/SettingsTab.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 
-const SUPABASE_URL = 'https://hmtevflfryjkudkcpmac.supabase.co';
-
+// --- Constants & Helpers ---
 const DEFAULT_ZONES = { z1Max: 114, z2Max: 132, z3Max: 150, z4Max: 168 };
+const toNum = (v) => parseFloat(v) || 0;
 
-function toNum(v) { return parseFloat(v) || 0; }
+const zonesFromMaxHR = (maxHR) => ({
+  z1Max: Math.round(maxHR * 0.60),
+  z2Max: Math.round(maxHR * 0.70),
+  z3Max: Math.round(maxHR * 0.80),
+  z4Max: Math.round(maxHR * 0.90),
+});
 
+// --- API Logic ---
 async function fetchUserProfile(userId) {
   const { data, error } = await supabase
     .from('users')
@@ -18,35 +23,15 @@ async function fetchUserProfile(userId) {
   return data;
 }
 
-async function saveUserProfile(userId, fields) {
-  const { error } = await supabase
-    .from('users')
-    .update(fields)
-    .eq('id', userId);
-  if (error) throw new Error(error.message);
-}
-
 async function estimateMaxHR(userId) {
-  // Pull all HR zone data from cycling workouts and estimate max HR
-  // from the highest z5 minutes (z5 = above z4Max boundary)
-  // Better approach: look at Strava streams via workouts table
-  // We stored hr_z4 and hr_z5 minutes but not the actual peak HR.
-  // Best estimate without raw stream: use age-based formula as baseline,
-  // then check if we can improve from workout data patterns.
-  const { data: profile } = await supabase
-    .from('users')
-    .select('birthday')
-    .eq('id', userId)
-    .single();
-
+  const { data: profile } = await supabase.from('users').select('birthday').eq('id', userId).single();
+  
   let ageBased = null;
   if (profile?.birthday) {
     const age = Math.floor((Date.now() - new Date(profile.birthday)) / (365.25 * 24 * 3600 * 1000));
-    ageBased = 220 - age; // standard formula
+    ageBased = 220 - age;
   }
 
-  // Get workouts with significant Z5 time — if someone spent time in Z5,
-  // their actual max HR is at least slightly above Z4 boundary
   const { data: workouts } = await supabase
     .from('workouts')
     .select('hr_z4, hr_z5, effort_score')
@@ -57,58 +42,49 @@ async function estimateMaxHR(userId) {
     .order('hr_z5', { ascending: false })
     .limit(20);
 
-  return { ageBased, hasZ5Data: workouts && workouts.length > 0, z5Rides: workouts?.length || 0 };
+  return { ageBased, hasZ5Data: workouts?.length > 0, z5Rides: workouts?.length || 0 };
 }
 
-function zonesFromMaxHR(maxHR) {
-  return {
-    z1Max: Math.round(maxHR * 0.60),
-    z2Max: Math.round(maxHR * 0.70),
-    z3Max: Math.round(maxHR * 0.80),
-    z4Max: Math.round(maxHR * 0.90),
-  };
-}
-
-export default function SettingsTab({ userId, onSaved }) {
-  const [profile, setProfile] = useState(null);
+// --- Component ---
+export default function SettingsTab({ userId, onSaved, onClose }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [estimating, setEstimating] = useState(false);
   const [hrEstimate, setHrEstimate] = useState(null);
 
-  // Form fields
-  const [name, setName]           = useState('');
-  const [birthday, setBirthday]   = useState('');
-  const [heightFt, setHeightFt]   = useState('');
-  const [heightIn, setHeightIn]   = useState('');
-  const [goalWeight, setGoalWeight] = useState('');
-  const [hrMax, setHrMax]         = useState('');
-  const [z1Max, setZ1Max]         = useState('');
-  const [z2Max, setZ2Max]         = useState('');
-  const [z3Max, setZ3Max]         = useState('');
-  const [z4Max, setZ4Max]         = useState('');
+  // Form State
+  const [form, setForm] = useState({
+    name: '', birthday: '', heightFt: '', heightIn: '',
+    goalWeight: '', hrMax: '', z1Max: '', z2Max: '', z3Max: '', z4Max: ''
+  });
 
-  const showMsg = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 4000); };
+  const updateForm = (updates) => setForm(prev => ({ ...prev, ...updates }));
+
+  const showMsg = (type, text) => {
+    setMsg({ type, text });
+    const timer = setTimeout(() => setMsg(null), 4000);
+    return () => clearTimeout(timer);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const p = await fetchUserProfile(userId);
-      setProfile(p);
-      setName(p.name || '');
-      setBirthday(p.birthday || '');
-      if (p.height_cm) {
-        const totalInches = p.height_cm / 2.54;
-        setHeightFt(String(Math.floor(totalInches / 12)));
-        setHeightIn(String(Math.round(totalInches % 12)));
-      }
-      setGoalWeight(String(p.goal_weight_lbs || ''));
-      setHrMax(String(p.hr_max || ''));
-      setZ1Max(String(p.hr_z1_max || DEFAULT_ZONES.z1Max));
-      setZ2Max(String(p.hr_z2_max || DEFAULT_ZONES.z2Max));
-      setZ3Max(String(p.hr_z3_max || DEFAULT_ZONES.z3Max));
-      setZ4Max(String(p.hr_z4_max || DEFAULT_ZONES.z4Max));
+      const totalInches = p.height_cm ? p.height_cm / 2.54 : 0;
+      
+      setForm({
+        name: p.name || '',
+        birthday: p.birthday || '',
+        heightFt: p.height_cm ? String(Math.floor(totalInches / 12)) : '',
+        heightIn: p.height_cm ? String(Math.round(totalInches % 12)) : '',
+        goalWeight: String(p.goal_weight_lbs || ''),
+        hrMax: String(p.hr_max || ''),
+        z1Max: String(p.hr_z1_max || DEFAULT_ZONES.z1Max),
+        z2Max: String(p.hr_z2_max || DEFAULT_ZONES.z2Max),
+        z3Max: String(p.hr_z3_max || DEFAULT_ZONES.z3Max),
+        z4Max: String(p.hr_z4_max || DEFAULT_ZONES.z4Max),
+      });
     } catch (e) { showMsg('error', e.message); }
     finally { setLoading(false); }
   }, [userId]);
@@ -116,15 +92,16 @@ export default function SettingsTab({ userId, onSaved }) {
   useEffect(() => { load(); }, [load]);
 
   const handleHrMaxChange = (val) => {
-    setHrMax(val);
+    const updates = { hrMax: val };
     const n = parseInt(val);
     if (n >= 100 && n <= 250) {
       const zones = zonesFromMaxHR(n);
-      setZ1Max(String(zones.z1Max));
-      setZ2Max(String(zones.z2Max));
-      setZ3Max(String(zones.z3Max));
-      setZ4Max(String(zones.z4Max));
+      updates.z1Max = String(zones.z1Max);
+      updates.z2Max = String(zones.z2Max);
+      updates.z3Max = String(zones.z3Max);
+      updates.z4Max = String(zones.z4Max);
     }
+    updateForm(updates);
   };
 
   const handleEstimate = async () => {
@@ -132,14 +109,7 @@ export default function SettingsTab({ userId, onSaved }) {
     try {
       const est = await estimateMaxHR(userId);
       setHrEstimate(est);
-      if (est.ageBased) {
-        setHrMax(String(est.ageBased));
-        const zones = zonesFromMaxHR(est.ageBased);
-        setZ1Max(String(zones.z1Max));
-        setZ2Max(String(zones.z2Max));
-        setZ3Max(String(zones.z3Max));
-        setZ4Max(String(zones.z4Max));
-      }
+      if (est.ageBased) handleHrMaxChange(String(est.ageBased));
     } catch (e) { showMsg('error', e.message); }
     finally { setEstimating(false); }
   };
@@ -147,123 +117,106 @@ export default function SettingsTab({ userId, onSaved }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const heightCm = (heightFt || heightIn)
-        ? ((toNum(heightFt) * 12) + toNum(heightIn)) * 2.54
+      const heightCm = (form.heightFt || form.heightIn)
+        ? ((toNum(form.heightFt) * 12) + toNum(form.heightIn)) * 2.54
         : null;
 
-      await saveUserProfile(userId, {
-        name:            name.trim() || null,
-        birthday:        birthday || null,
-        height_cm:       heightCm,
-        goal_weight_lbs: toNum(goalWeight) || null,
-        hr_max:          toNum(hrMax) || null,
-        hr_z1_max:       toNum(z1Max) || null,
-        hr_z2_max:       toNum(z2Max) || null,
-        hr_z3_max:       toNum(z3Max) || null,
-        hr_z4_max:       toNum(z4Max) || null,
-      });
+      const { error } = await supabase.from('users').update({
+        name: form.name.trim() || null,
+        birthday: form.birthday || null,
+        height_cm: heightCm,
+        goal_weight_lbs: toNum(form.goalWeight) || null,
+        hr_max: toNum(form.hrMax) || null,
+        hr_z1_max: toNum(form.z1Max) || null,
+        hr_z2_max: toNum(form.z2Max) || null,
+        hr_z3_max: toNum(form.z3Max) || null,
+        hr_z4_max: toNum(form.z4Max) || null,
+      }).eq('id', userId);
 
+      if (error) throw error;
       showMsg('success', 'Settings saved!');
       if (onSaved) onSaved();
     } catch (e) { showMsg('error', e.message); }
     finally { setSaving(false); }
   };
 
-  const inputStyle = {
-    width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14,
-    padding: '10px 12px', boxSizing: 'border-box', fontFamily: 'var(--font-body)',
+  // --- Styles ---
+  const styles = {
+    input: { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14, padding: '10px 12px', boxSizing: 'border-box', fontFamily: 'var(--font-body)' },
+    numInput: { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14, padding: '10px 12px', boxSizing: 'border-box', fontFamily: 'var(--font-mono)' },
+    label: { fontSize: 11, color: 'var(--text2)', marginBottom: 4, display: 'block' },
+    closeBtn: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: 24, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }
   };
-  const numStyle = { ...inputStyle, fontFamily: 'var(--font-mono)' };
-  const labelStyle = { fontSize: 11, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
-  if (loading) return (
-    <div style={{ padding: 40, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>Loading...</div>
-  );
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>Loading...</div>;
 
   return (
     <>
-      <div className="section-header">
+      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="section-title">SETTINGS</span>
+        {onClose && <button onClick={onClose} style={styles.closeBtn} title="Close">&times;</button>}
       </div>
 
       {msg && <div className={`sync-banner ${msg.type}`} style={{ marginBottom: 16 }}>{msg.text}</div>}
 
-      {/* Profile */}
       <div className="chart-card" style={{ marginBottom: 16 }}>
         <div className="chart-title">Profile</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <label style={labelStyle}>Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder="Your name" />
+            <label style={styles.label}>Name</label>
+            <input value={form.name} onChange={e => updateForm({ name: e.target.value })} style={styles.input} />
           </div>
           <div>
-            <label style={labelStyle}>Birthday</label>
-            <input type="date" value={birthday} onChange={e => setBirthday(e.target.value)} style={inputStyle} />
+            <label style={styles.label}>Birthday</label>
+            <input type="date" value={form.birthday} onChange={e => updateForm({ birthday: e.target.value })} style={styles.input} />
           </div>
-          <div>
-            <label style={labelStyle}>Height</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ flex: 1 }}>
-                <input type="number" value={heightFt} onChange={e => setHeightFt(e.target.value)} style={numStyle} placeholder="ft" min="3" max="8" />
-                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>feet</div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <input type="number" value={heightIn} onChange={e => setHeightIn(e.target.value)} style={numStyle} placeholder="in" min="0" max="11" />
-                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>inches</div>
-              </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={styles.label}>Height (ft)</label>
+              <input type="number" value={form.heightFt} onChange={e => updateForm({ heightFt: e.target.value })} style={styles.numInput} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={styles.label}>Height (in)</label>
+              <input type="number" value={form.heightIn} onChange={e => updateForm({ heightIn: e.target.value })} style={styles.numInput} />
             </div>
           </div>
           <div>
-            <label style={labelStyle}>Goal Weight (lbs)</label>
-            <input type="number" value={goalWeight} onChange={e => setGoalWeight(e.target.value)} style={numStyle} placeholder="180" />
+            <label style={styles.label}>Goal Weight (lbs)</label>
+            <input type="number" value={form.goalWeight} onChange={e => updateForm({ goalWeight: e.target.value })} style={styles.numInput} />
           </div>
         </div>
       </div>
 
-      {/* Heart Rate Zones */}
       <div className="chart-card" style={{ marginBottom: 16 }}>
         <div className="chart-title">Heart Rate Zones</div>
-        <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 14, lineHeight: 1.6 }}>
-          Zone boundaries are calculated from your max HR. Enter your max HR and zones update automatically, or adjust them manually.
-        </div>
-
-        {/* Estimate button */}
-        <button className="sync-btn" onClick={handleEstimate} disabled={estimating} style={{ width: '100%', padding: 10, marginBottom: 14, fontSize: 13 }}>
+        <button className="sync-btn" onClick={handleEstimate} disabled={estimating} style={{ width: '100%', padding: 10, marginBottom: 14 }}>
           {estimating ? 'Estimating...' : '📊 Estimate from ride history'}
         </button>
 
         {hrEstimate && (
-          <div style={{ padding: '10px 12px', background: 'var(--bg3)', borderRadius: 'var(--radius)', marginBottom: 14, fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-            {hrEstimate.ageBased && <div>Age-based estimate: <strong style={{ color: 'var(--accent)' }}>{hrEstimate.ageBased} bpm</strong> (220 minus age)</div>}
-            {hrEstimate.hasZ5Data
-              ? <div>You have {hrEstimate.z5Rides} rides with Z5 data — your actual max HR is likely higher than the age estimate.</div>
-              : <div>No Z5 HR data found in your rides — age-based estimate is your best baseline.</div>
-            }
-            <div style={{ marginTop: 4, color: 'var(--text3)' }}>Zones have been updated below. Adjust if needed then save.</div>
+          <div style={{ padding: 12, background: 'var(--bg3)', borderRadius: 'var(--radius)', marginBottom: 14, fontSize: 12 }}>
+            {hrEstimate.ageBased && <div>Age-based: <strong style={{ color: 'var(--accent)' }}>{hrEstimate.ageBased} bpm</strong></div>}
+            <div>{hrEstimate.hasZ5Data ? `Based on ${hrEstimate.z5Rides} rides with Z5 data.` : 'No Z5 data found.'}</div>
           </div>
         )}
 
         <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Max Heart Rate (bpm)</label>
-          <input type="number" value={hrMax} onChange={e => handleHrMaxChange(e.target.value)} style={numStyle} placeholder="e.g. 185" />
+          <label style={styles.label}>Max Heart Rate (bpm)</label>
+          <input type="number" value={form.hrMax} onChange={e => handleHrMaxChange(e.target.value)} style={styles.numInput} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
-            ['Z1 ceiling (bpm)', z1Max, setZ1Max, 'var(--blue)'],
-            ['Z2 ceiling (bpm)', z2Max, setZ2Max, 'var(--green)'],
-            ['Z3 ceiling (bpm)', z3Max, setZ3Max, 'var(--accent)'],
-            ['Z4 ceiling (bpm)', z4Max, setZ4Max, 'var(--red)'],
+            ['Z1 ceiling', form.z1Max, v => updateForm({ z1Max: v }), 'var(--blue)'],
+            ['Z2 ceiling', form.z2Max, v => updateForm({ z2Max: v }), 'var(--green)'],
+            ['Z3 ceiling', form.z3Max, v => updateForm({ z3Max: v }), 'var(--accent)'],
+            ['Z4 ceiling', form.z4Max, v => updateForm({ z4Max: v }), 'var(--red)'],
           ].map(([label, val, setter, color]) => (
             <div key={label}>
-              <label style={{ ...labelStyle, color }}>{label}</label>
-              <input type="number" value={val} onChange={e => setter(e.target.value)} style={numStyle} />
+              <label style={{ ...styles.label, color }}>{label}</label>
+              <input type="number" value={val} onChange={e => setter(e.target.value)} style={styles.numInput} />
             </div>
           ))}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10, lineHeight: 1.5 }}>
-          Z5 starts above the Z4 ceiling. New rides synced from Strava will use these boundaries.
         </div>
       </div>
 
