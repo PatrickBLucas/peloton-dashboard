@@ -1,6 +1,6 @@
 // src/components/OverviewTab.js
 import { useMemo } from 'react';
-import { format, subDays } from 'date-fns';
+import { format, subDays, differenceInCalendarDays } from 'date-fns';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar,
   ComposedChart, Line, ReferenceLine, Legend
@@ -17,6 +17,39 @@ function StatCard({ label, value, sub, accent, color }) {
   );
 }
 
+function computeStreak(workouts) {
+  if (!workouts || workouts.length === 0) return { count: 0, lastWorkout: null };
+
+  // Get unique workout dates as YYYY-MM-DD strings, sorted descending
+  const dates = [...new Set(
+    workouts.map(w => format(w.date, 'yyyy-MM-dd'))
+  )].sort((a, b) => b.localeCompare(a));
+
+  if (dates.length === 0) return { count: 0, lastWorkout: null };
+
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+
+  // Streak only counts if the most recent workout was today or yesterday
+  if (dates[0] !== today && dates[0] !== yesterday) {
+    return { count: 0, lastWorkout: dates[0] };
+  }
+
+  let streak = 1;
+  for (let i = 1; i < dates.length; i++) {
+    const prev = new Date(dates[i - 1]);
+    const curr = new Date(dates[i]);
+    const diff = differenceInCalendarDays(prev, curr);
+    if (diff === 1) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+
+  return { count: streak, lastWorkout: dates[0] };
+}
+
 export default function OverviewTab({ data }) {
   const { stats, fitbit, weight, workouts } = data;
 
@@ -26,6 +59,20 @@ export default function OverviewTab({ data }) {
     ? Math.round(stats.yesterdayConsumed - stats.yesterdayBurned) : null;
 
   const sleep = useMemo(() => computeSleepStats(fitbit), [fitbit]);
+
+  const streak = useMemo(() => computeStreak(workouts), [workouts]);
+
+  const streakSub = useMemo(() => {
+    if (streak.count > 0) {
+      const lastDate = format(new Date(streak.lastWorkout), 'MMM d');
+      const isToday = streak.lastWorkout === format(new Date(), 'yyyy-MM-dd');
+      return isToday ? 'last workout: today' : `last workout: ${lastDate}`;
+    }
+    if (streak.lastWorkout) {
+      return `last workout: ${format(new Date(streak.lastWorkout), 'MMM d')}`;
+    }
+    return 'no workouts logged';
+  }, [streak]);
 
   const sleepEfficiencyColor = sleep.avgEfficiency === null ? null
     : sleep.avgEfficiency >= 90 ? 'green'
@@ -151,6 +198,13 @@ export default function OverviewTab({ data }) {
           </div>
           <div className="today-detail">{stats.rides ? `${stats.rides} total activities logged` : ''}</div>
         </div>
+        <div className="today-cell">
+          <div className="today-label">Current Streak</div>
+          <div className={`today-val ${streak.count >= 7 ? 'positive' : streak.count >= 3 ? 'neutral' : streak.count === 0 ? 'negative' : 'neutral'}`}>
+            {streak.count > 0 ? `${streak.count} 🔥` : '0'}
+          </div>
+          <div className="today-detail">{streakSub}</div>
+        </div>
       </div>
 
       <div className="stat-grid">
@@ -251,7 +305,7 @@ export default function OverviewTab({ data }) {
           </ComposedChart>
         </ResponsiveContainer>
         <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', marginTop: 4 }}>
-          Blue bars = net calories (consumed − burned) · Accent bars = ride days · Line = weight
+          Blue bars = net calories (consumed - burned) · Accent bars = ride days · Line = weight
         </div>
       </div>
     </>
