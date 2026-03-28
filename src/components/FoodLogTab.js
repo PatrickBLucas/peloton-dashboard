@@ -439,6 +439,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   };
 
   const handleBarcodeDetected = async (barcode) => {
+    console.log('raw barcode from scanner:', barcode);
     setScannerOpen(false); setBarcodeResult(null); setLookingUp(true);
     try {
       const [offResult, usdaResult] = await Promise.allSettled([lookupBarcode(barcode), lookupUSDABarcode(barcode)]);
