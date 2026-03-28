@@ -45,6 +45,8 @@ function computeStreak(workouts) {
   }
 
   return { count: streak, lastWorkout: dates[0] };
+  console.log('streak dates:', dates.slice(0, 5));
+console.log('raw workout dates:', workouts.slice(-5).map(w => ({ raw: w.date, formatted: format(w.date, 'yyyy-MM-dd') })));
 }
 
 export default function OverviewTab({ data }) {
