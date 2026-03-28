@@ -63,7 +63,7 @@ export default function OverviewTab({ data }) {
 
   const streakSub = useMemo(() => {
     if (streak.count > 0) {
-      const lastDate = format(new Date(streak.lastWorkout), 'MMM d');
+      const lastDate = format(parse(streak.lastWorkout, 'yyyy-MM-dd', new Date()), 'MMM d');
       const isToday = streak.lastWorkout === format(new Date(), 'yyyy-MM-dd');
       return isToday ? 'last workout: today' : `last workout: ${lastDate}`;
     }
