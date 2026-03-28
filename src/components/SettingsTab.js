@@ -2,8 +2,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
-const SUPABASE_URL = 'https://hmtevflfryjkudkcpmac.supabase.co';
-
 const DEFAULT_ZONES = { z1Max: 114, z2Max: 132, z3Max: 150, z4Max: 168 };
 
 function toNum(v) { return parseFloat(v) || 0; }
@@ -11,7 +9,7 @@ function toNum(v) { return parseFloat(v) || 0; }
 async function fetchUserProfile(userId) {
   const { data, error } = await supabase
     .from('users')
-    .select('name, birthday, height_cm, goal_weight_lbs, hr_max, hr_z1_max, hr_z2_max, hr_z3_max, hr_z4_max')
+    .select('name, birthday, height_cm, goal_weight_lbs, hr_min, hr_max, hr_z1_max, hr_z2_max, hr_z3_max, hr_z4_max')
     .eq('id', userId)
     .single();
   if (error) throw new Error(error.message);
@@ -61,8 +59,57 @@ function zonesFromMaxHR(maxHR) {
   };
 }
 
+function ZonePreview({ hrMin, hrMax, z1Max, z2Max, z3Max, z4Max }) {
+  const min = parseInt(hrMin, 10);
+  const max = parseInt(hrMax, 10);
+  const z1 = parseInt(z1Max, 10);
+  const z2 = parseInt(z2Max, 10);
+  const z3 = parseInt(z3Max, 10);
+  const z4 = parseInt(z4Max, 10);
+
+  if (!max || max < 100) return null;
+
+  const zones = [
+    { label: 'Z1', color: 'var(--blue)',   range: `${min || 0} - ${z1}` },
+    { label: 'Z2', color: 'var(--green)',  range: `${z1 + 1} - ${z2}` },
+    { label: 'Z3', color: 'var(--accent)', range: `${z2 + 1} - ${z3}` },
+    { label: 'Z4', color: 'var(--red)',    range: `${z3 + 1} - ${z4}` },
+    { label: 'Z5', color: '#ff4dff',       range: `${z4 + 1}${max ? ` - ${max}` : '+'}` },
+  ];
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(5, 1fr)',
+        gap: 6,
+        marginTop: 16,
+        marginBottom: 4,
+      }}
+    >
+      {zones.map(({ label, color, range }) => (
+        <div
+          key={label}
+          style={{
+            background: 'var(--bg3)',
+            borderRadius: 'var(--radius)',
+            padding: '8px 6px',
+            textAlign: 'center',
+            borderTop: `3px solid ${color}`,
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', lineHeight: 1.4 }}>
+            {range}
+          </div>
+          <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>bpm</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function SettingsTab({ userId, onSaved, onClose }) {
-  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -74,6 +121,7 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
   const [heightFt, setHeightFt] = useState('');
   const [heightIn, setHeightIn] = useState('');
   const [goalWeight, setGoalWeight] = useState('');
+  const [hrMin, setHrMin] = useState('');
   const [hrMax, setHrMax] = useState('');
   const [z1Max, setZ1Max] = useState('');
   const [z2Max, setZ2Max] = useState('');
@@ -89,7 +137,6 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
     setLoading(true);
     try {
       const p = await fetchUserProfile(userId);
-      setProfile(p);
       setName(p.name || '');
       setBirthday(p.birthday || '');
 
@@ -100,6 +147,7 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
       }
 
       setGoalWeight(String(p.goal_weight_lbs || ''));
+      setHrMin(String(p.hr_min || ''));
       setHrMax(String(p.hr_max || ''));
       setZ1Max(String(p.hr_z1_max || DEFAULT_ZONES.z1Max));
       setZ2Max(String(p.hr_z2_max || DEFAULT_ZONES.z2Max));
@@ -160,6 +208,7 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
         birthday: birthday || null,
         height_cm: heightCm,
         goal_weight_lbs: toNum(goalWeight) || null,
+        hr_min: toNum(hrMin) || null,
         hr_max: toNum(hrMax) || null,
         hr_z1_max: toNum(z1Max) || null,
         hr_z2_max: toNum(z2Max) || null,
@@ -205,7 +254,6 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
         <div className="section-header" style={{ marginBottom: 0 }}>
           <span className="section-title">SETTINGS</span>
         </div>
-
         <button
           type="button"
           className="settings-close-btn"
@@ -227,12 +275,10 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
               <label style={labelStyle}>Name</label>
               <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder="Your name" />
             </div>
-
             <div>
               <label style={labelStyle}>Birthday</label>
               <input type="date" value={birthday} onChange={e => setBirthday(e.target.value)} style={inputStyle} />
             </div>
-
             <div>
               <label style={labelStyle}>Height</label>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -246,7 +292,6 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
                 </div>
               </div>
             </div>
-
             <div>
               <label style={labelStyle}>Goal Weight (lbs)</label>
               <input type="number" value={goalWeight} onChange={e => setGoalWeight(e.target.value)} style={numStyle} placeholder="180" />
@@ -257,7 +302,7 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
         <div className="chart-card settings-card" style={{ marginBottom: 16 }}>
           <div className="chart-title">Heart Rate Zones</div>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 14, lineHeight: 1.6 }}>
-            Zone boundaries are calculated from your max HR. Enter your max HR and zones update automatically, or adjust them manually.
+            Enter your resting HR and max HR. Zone ceilings are calculated automatically from max HR, or adjust them manually below.
           </div>
 
           <button
@@ -296,9 +341,27 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
             </div>
           )}
 
-          <div style={{ marginBottom: 12 }}>
-            <label style={labelStyle}>Max Heart Rate (bpm)</label>
-            <input type="number" value={hrMax} onChange={e => handleHrMaxChange(e.target.value)} style={numStyle} placeholder="e.g. 185" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <div>
+              <label style={labelStyle}>Resting HR (bpm)</label>
+              <input
+                type="number"
+                value={hrMin}
+                onChange={e => setHrMin(e.target.value)}
+                style={numStyle}
+                placeholder="e.g. 55"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Max HR (bpm)</label>
+              <input
+                type="number"
+                value={hrMax}
+                onChange={e => handleHrMaxChange(e.target.value)}
+                style={numStyle}
+                placeholder="e.g. 178"
+              />
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -315,6 +378,15 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
             ))}
           </div>
 
+          <ZonePreview
+            hrMin={hrMin}
+            hrMax={hrMax}
+            z1Max={z1Max}
+            z2Max={z2Max}
+            z3Max={z3Max}
+            z4Max={z4Max}
+          />
+
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10, lineHeight: 1.5 }}>
             Z5 starts above the Z4 ceiling. New rides synced from Strava will use these boundaries.
           </div>
@@ -328,7 +400,6 @@ export default function SettingsTab({ userId, onSaved, onClose }) {
           >
             Cancel
           </button>
-
           <button
             className="sync-btn"
             onClick={handleSave}
