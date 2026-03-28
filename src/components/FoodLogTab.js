@@ -16,53 +16,138 @@ function nowTimeStr() {
 }
 function toNum(v) { return parseFloat(v) || 0; }
 
-// ── Barcode Scanner ───────────────────────────────────────────────────────────
+// ── Barcode validation (EAN-13, EAN-8, UPC-A) ─────────────────────────────────
+function validateBarcode(barcode) {
+  const str = barcode.replace(/\D/g, '');
+  if (![8, 12, 13].includes(str.length)) return false;
+  const digits = str.split('').map(Number);
+  const check = digits.pop();
+  const sum = digits.reduce((s, d, i) => {
+    const weight = (str.length === 8 || str.length === 13)
+      ? (i % 2 === 0 ? 1 : 3)
+      : (i % 2 === 0 ? 3 : 1);
+    return s + d * weight;
+  }, 0);
+  return (10 - (sum % 10)) % 10 === check;
+}
+
+// ── Barcode Scanner (Quagga2) ─────────────────────────────────────────────────
 function BarcodeScanner({ onDetected, onClose }) {
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const rafRef = useRef(null);
+  const containerRef = useRef(null);
   const detectedRef = useRef(false);
   const [status, setStatus] = useState('Starting camera...');
 
   useEffect(() => {
+    let quaggaInstance = null;
+
     async function start() {
-      if (!('BarcodeDetector' in window)) { setStatus('BarcodeDetector not supported.'); return; }
-      let stream;
+      let Quagga;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } });
-      } catch (e) { setStatus(`Camera error: ${e.message}`); return; }
-      streamRef.current = stream;
-      const video = videoRef.current;
-      video.srcObject = stream;
-      await video.play();
-      setStatus('Scanning — point at barcode');
-      const detector = new window.BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'] });
-      async function scan() {
-        if (detectedRef.current) return;
-        try {
-          const results = await detector.detect(video);
-          if (results.length > 0 && !detectedRef.current) { detectedRef.current = true; onDetected(results[0].rawValue); return; }
-        } catch (_) {}
-        rafRef.current = requestAnimationFrame(scan);
+        Quagga = (await import('@ericblade/quagga2')).default;
+      } catch (e) {
+        setStatus('Barcode library failed to load.');
+        return;
       }
-      rafRef.current = requestAnimationFrame(scan);
+
+      quaggaInstance = Quagga;
+
+      Quagga.init({
+        inputStream: {
+          type: 'LiveStream',
+          target: containerRef.current,
+          constraints: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        },
+        locator: {
+          patchSize: 'medium',
+          halfSample: true,
+        },
+        numOfWorkers: 2,
+        frequency: 5,
+        decoder: {
+          readers: ['ean_reader', 'ean_8_reader', 'upc_reader', 'upc_e_reader', 'code_128_reader'],
+        },
+        locate: true,
+      }, (err) => {
+        if (err) {
+          setStatus(`Camera error: ${err.message || err}`);
+          return;
+        }
+        Quagga.start();
+        setStatus('Scanning — point at barcode');
+      });
+
+      Quagga.onDetected((result) => {
+        if (detectedRef.current) return;
+        const code = result?.codeResult?.code;
+        if (!code) return;
+
+        if (!validateBarcode(code)) {
+          setStatus(`Bad read (${code}) — hold steady...`);
+          return;
+        }
+
+        detectedRef.current = true;
+        Quagga.stop();
+        onDetected(code);
+      });
     }
+
     start();
+
     return () => {
       detectedRef.current = true;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (quaggaInstance) {
+        try { quaggaInstance.stop(); } catch (_) {}
+      }
     };
   }, [onDetected]);
 
   return (
     <div style={{ position: 'relative', background: '#000', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 12 }}>
-      <video ref={videoRef} style={{ width: '100%', display: 'block', maxHeight: 240, objectFit: 'cover' }} muted playsInline />
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-        <div style={{ width: '70%', height: 70, border: '2px solid var(--accent)', borderRadius: 6, boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)' }} />
+      <div
+        ref={containerRef}
+        style={{ width: '100%', maxHeight: 240, overflow: 'hidden', display: 'block' }}
+      />
+      {/* Hide Quagga's debug canvas overlay */}
+      <style>{`#interactive canvas { display: none !important; }`}</style>
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'none',
+      }}>
+        <div style={{
+          width: '70%', height: 70,
+          border: '2px solid var(--accent)',
+          borderRadius: 6,
+          boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+        }} />
       </div>
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: 'var(--accent)', fontSize: 12, textAlign: 'center', padding: '6px 12px', fontFamily: 'var(--font-mono)' }}>{status}</div>
-      <button onClick={onClose} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: 16 }}>✕</button>
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        background: 'rgba(0,0,0,0.6)', color: 'var(--accent)',
+        fontSize: 12, textAlign: 'center', padding: '6px 12px',
+        fontFamily: 'var(--font-mono)',
+      }}>
+        {status}
+      </div>
+      <button
+        onClick={() => {
+          import('@ericblade/quagga2').then(m => { try { m.default.stop(); } catch (_) {} });
+          onClose();
+        }}
+        style={{
+          position: 'absolute', top: 8, right: 8,
+          background: 'rgba(0,0,0,0.6)', border: 'none',
+          color: '#fff', borderRadius: '50%',
+          width: 32, height: 32, cursor: 'pointer', fontSize: 16,
+        }}
+      >
+        ✕
+      </button>
     </div>
   );
 }
@@ -101,7 +186,6 @@ function FoodCamera({ onCapture, onClose }) {
     canvas.width  = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
-    // Stop camera before handing off
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     canvas.toBlob(blob => {
       if (blob) onCapture(blob);
@@ -439,23 +523,24 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   };
 
   const handleBarcodeDetected = async (barcode) => {
-  setScannerOpen(false);
-  setBarcodeResult({ debug: true, description: `Scanned: "${barcode}"`, calories: 0, protein: 0, carbs: 0, fat: 0, barcode });
-  return;
-};
-
-  /*const handleBarcodeDetected = async (barcode) => {
-    setBarcodeResult({ debug: true, description: `Scanned: "${barcode}"`, calories: 0, protein: 0, carbs: 0, fat: 0, barcode });
-    setScannerOpen(false); setBarcodeResult(null); setLookingUp(true);
+    setScannerOpen(false);
+    setBarcodeResult(null);
+    setLookingUp(true);
     try {
-      const [offResult, usdaResult] = await Promise.allSettled([lookupBarcode(barcode), lookupUSDABarcode(barcode)]);
+      const [offResult, usdaResult] = await Promise.allSettled([
+        lookupBarcode(barcode),
+        lookupUSDABarcode(barcode),
+      ]);
       const result = (offResult.status === 'fulfilled' && offResult.value) ? offResult.value :
                      (usdaResult.status === 'fulfilled' && usdaResult.value) ? usdaResult.value : null;
       if (result) setBarcodeResult({ ...result, barcode });
       else showMsg('error', 'Product not found.');
-    } catch (e) { showMsg('error', 'Barcode lookup failed.'); }
-    finally { setLookingUp(false); }
-  };*/
+    } catch (e) {
+      showMsg('error', 'Barcode lookup failed.');
+    } finally {
+      setLookingUp(false);
+    }
+  };
 
   const handleManualAdd = () => {
     if (!manualFields.description.trim() || !manualFields.calories) return;
@@ -543,7 +628,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
         <div>
           {scannerOpen
             ? <BarcodeScanner onDetected={handleBarcodeDetected} onClose={() => setScannerOpen(false)} />
-            : <button className="sync-btn" onClick={() => setScannerOpen(true)} disabled={lookingUp} style={{ width: '100%', padding: 12, marginBottom: 12 }}>
+            : <button className="sync-btn" onClick={() => { setBarcodeResult(null); setScannerOpen(true); }} disabled={lookingUp} style={{ width: '100%', padding: 12, marginBottom: 12 }}>
                 {lookingUp ? 'Looking up...' : '📷 Open Barcode Scanner'}
               </button>
           }
@@ -638,7 +723,6 @@ export default function FoodLogTab({ data, userId }) {
   const [textInput, setTextInput] = useState('');
   const [estimating, setEstimating] = useState(false);
 
-  // Photo mode — in-app camera
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photoBlob, setPhotoBlob] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);

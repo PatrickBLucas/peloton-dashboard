@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@ericblade/quagga2": "^1.12.1",
     "@react-oauth/google": "^0.12.1",
     "@supabase/supabase-js": "^2.100.0",
     "date-fns": "^3.3.1",
