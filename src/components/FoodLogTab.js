@@ -439,6 +439,12 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   };
 
   const handleBarcodeDetected = async (barcode) => {
+  setScannerOpen(false);
+  setBarcodeResult({ debug: true, description: `Scanned: "${barcode}"`, calories: 0, protein: 0, carbs: 0, fat: 0, barcode });
+  return;
+};
+
+  /*const handleBarcodeDetected = async (barcode) => {
     setBarcodeResult({ debug: true, description: `Scanned: "${barcode}"`, calories: 0, protein: 0, carbs: 0, fat: 0, barcode });
     setScannerOpen(false); setBarcodeResult(null); setLookingUp(true);
     try {
@@ -449,7 +455,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
       else showMsg('error', 'Product not found.');
     } catch (e) { showMsg('error', 'Barcode lookup failed.'); }
     finally { setLookingUp(false); }
-  };
+  };*/
 
   const handleManualAdd = () => {
     if (!manualFields.description.trim() || !manualFields.calories) return;
