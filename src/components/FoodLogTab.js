@@ -7,9 +7,21 @@ import {
 } from '../api/supabase';
 import { supabase } from '../lib/supabase';
 
-function todayStr() {
-  const d = new Date();
+function dateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function todayStr() { return dateStr(new Date()); }
+function offsetDate(base, days) {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+function formatDisplayDate(ds) {
+  if (ds === todayStr()) return 'Today';
+  if (ds === dateStr(offsetDate(new Date(), -1))) return 'Yesterday';
+  const [y, m, d] = ds.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 function nowTimeStr() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -41,38 +53,24 @@ function BarcodeScanner({ onDetected, onClose }) {
 
   useEffect(() => {
     async function start() {
-      if (!('BarcodeDetector' in window)) {
-        setStatus('Barcode scanning not supported on this browser.');
-        return;
-      }
+      if (!('BarcodeDetector' in window)) { setStatus('Barcode scanning not supported on this browser.'); return; }
       let stream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
-        });
-      } catch (e) {
-        setStatus(`Camera error: ${e.message}`);
-        return;
-      }
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } });
+      } catch (e) { setStatus(`Camera error: ${e.message}`); return; }
       streamRef.current = stream;
       const video = videoRef.current;
       video.srcObject = stream;
       await video.play();
-
       const track = stream.getVideoTracks()[0];
       const capabilities = track.getCapabilities();
       if (capabilities.focusMode?.includes('continuous')) {
         await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
       }
-
       setStatus('Focusing...');
       await new Promise(resolve => setTimeout(resolve, 800));
       setStatus('Scanning — point at barcode');
-
-      const detector = new window.BarcodeDetector({
-        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code']
-      });
-
+      const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'] });
       async function scan() {
         if (detectedRef.current) return;
         try {
@@ -82,21 +80,15 @@ function BarcodeScanner({ onDetected, onClose }) {
             if (validateBarcode(val)) {
               detectedRef.current = true;
               if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-              onDetected(val);
-              return;
-            } else {
-              setStatus('Bad read — hold steady...');
-            }
+              onDetected(val); return;
+            } else { setStatus('Bad read — hold steady...'); }
           }
         } catch (_) {}
         timerRef.current = setTimeout(scan, 300);
       }
-
       timerRef.current = setTimeout(scan, 300);
     }
-
     start();
-
     return () => {
       detectedRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -110,12 +102,8 @@ function BarcodeScanner({ onDetected, onClose }) {
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
         <div style={{ width: '70%', height: 70, border: '2px solid var(--accent)', borderRadius: 6, boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)' }} />
       </div>
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: 'var(--accent)', fontSize: 12, textAlign: 'center', padding: '6px 12px', fontFamily: 'var(--font-mono)' }}>
-        {status}
-      </div>
-      <button onClick={onClose} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: 16 }}>
-        ✕
-      </button>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: 'var(--accent)', fontSize: 12, textAlign: 'center', padding: '6px 12px', fontFamily: 'var(--font-mono)' }}>{status}</div>
+      <button onClick={onClose} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: 16 }}>✕</button>
     </div>
   );
 }
@@ -130,29 +118,22 @@ function FoodCamera({ onCapture, onClose }) {
   useEffect(() => {
     async function start() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
         streamRef.current = stream;
         const video = videoRef.current;
         video.srcObject = stream;
         await video.play();
         setReady(true);
-      } catch (e) {
-        setError(`Camera error: ${e.message}`);
-      }
+      } catch (e) { setError(`Camera error: ${e.message}`); }
     }
     start();
-    return () => {
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    };
+    return () => { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
   }, []);
 
   const handleCapture = () => {
     const video = videoRef.current;
     const canvas = document.createElement('canvas');
-    canvas.width  = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     canvas.toBlob(blob => { if (blob) onCapture(blob); }, 'image/jpeg', 0.85);
@@ -165,14 +146,11 @@ function FoodCamera({ onCapture, onClose }) {
       {!error && (
         <div style={{ position: 'absolute', bottom: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 16, alignItems: 'center' }}>
           <button onClick={onClose} style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-          <button onClick={handleCapture} disabled={!ready}
-            style={{ background: ready ? 'var(--accent)' : '#555', border: 'none', color: '#000', borderRadius: '50%', width: 56, height: 56, cursor: ready ? 'pointer' : 'default', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>●</button>
+          <button onClick={handleCapture} disabled={!ready} style={{ background: ready ? 'var(--accent)' : '#555', border: 'none', color: '#000', borderRadius: '50%', width: 56, height: 56, cursor: ready ? 'pointer' : 'default', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>●</button>
           <div style={{ width: 80 }} />
         </div>
       )}
-      {!ready && !error && (
-        <div style={{ position: 'absolute', top: 8, left: 0, right: 0, textAlign: 'center', color: 'var(--accent)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>Starting camera...</div>
-      )}
+      {!ready && !error && <div style={{ position: 'absolute', top: 8, left: 0, right: 0, textAlign: 'center', color: 'var(--accent)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>Starting camera...</div>}
     </div>
   );
 }
@@ -209,30 +187,18 @@ function buildFromOFF(p) {
   const n = p.nutriments || {};
   const per100 = (f) => toNum(n[`${f}_100g`] ?? n[f] ?? 0);
   let kcalPer100 = per100('energy-kcal');
-  if (!kcalPer100 || kcalPer100 > 900) {
-    const kj = per100('energy-kj') || per100('energy');
-    kcalPer100 = kj / 4.184;
-  }
+  if (!kcalPer100 || kcalPer100 > 900) { const kj = per100('energy-kj') || per100('energy'); kcalPer100 = kj / 4.184; }
   const perServing = (f) => toNum(n[`${f}_serving`] ?? 0);
   const servingRaw = p.serving_size || '';
   const match = servingRaw.match(/(\d+(\.\d+)?)\s*g/i);
   const servingG = match ? parseFloat(match[1]) : toNum(p.serving_quantity) || 100;
   const ratio = servingG / 100;
-  let calories = perServing('energy-kcal');
-  let protein  = perServing('proteins');
-  let carbs    = perServing('carbohydrates');
-  let fat      = perServing('fat');
+  let calories = perServing('energy-kcal'); let protein = perServing('proteins'); let carbs = perServing('carbohydrates'); let fat = perServing('fat');
   if (!calories || calories > 1200) calories = kcalPer100 * ratio;
   if (!protein) protein = per100('proteins') * ratio;
-  if (!carbs)   carbs   = per100('carbohydrates') * ratio;
-  if (!fat)     fat     = per100('fat') * ratio;
-  return {
-    description: p.product_name || 'Scanned product',
-    calories: Math.round(calories), protein: Math.round(protein),
-    carbs: Math.round(carbs), fat: Math.round(fat),
-    per100g: { calories: kcalPer100, protein: per100('proteins'), carbs: per100('carbohydrates'), fat: per100('fat') },
-    servingG, source: 'barcode',
-  };
+  if (!carbs) carbs = per100('carbohydrates') * ratio;
+  if (!fat) fat = per100('fat') * ratio;
+  return { description: p.product_name || 'Scanned product', calories: Math.round(calories), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), per100g: { calories: kcalPer100, protein: per100('proteins'), carbs: per100('carbohydrates'), fat: per100('fat') }, servingG, source: 'barcode' };
 }
 
 function buildFromUSDA(food) {
@@ -242,25 +208,13 @@ function buildFromUSDA(food) {
   const per100g = { calories: kcalPer100, protein: get('Protein'), carbs: get('Carbohydrate, by difference'), fat: get('Total lipid (fat)') };
   const servingG = toNum(food.servingSize) || 100;
   const ratio = servingG / 100;
-  return {
-    description: food.description || 'USDA product',
-    calories: Math.round(per100g.calories * ratio), protein: Math.round(per100g.protein * ratio),
-    carbs: Math.round(per100g.carbs * ratio), fat: Math.round(per100g.fat * ratio),
-    per100g, servingG, source: 'usda',
-  };
+  return { description: food.description || 'USDA product', calories: Math.round(per100g.calories * ratio), protein: Math.round(per100g.protein * ratio), carbs: Math.round(per100g.carbs * ratio), fat: Math.round(per100g.fat * ratio), per100g, servingG, source: 'usda' };
 }
 
 function scaleToGrams(item, grams) {
   if (!item.per100g || !grams) return item;
   const ratio = grams / 100;
-  return {
-    ...item,
-    calories: Math.round(item.per100g.calories * ratio),
-    protein:  Math.round(item.per100g.protein  * ratio),
-    carbs:    Math.round(item.per100g.carbs    * ratio),
-    fat:      Math.round(item.per100g.fat      * ratio),
-    servingG: grams,
-  };
+  return { ...item, calories: Math.round(item.per100g.calories * ratio), protein: Math.round(item.per100g.protein * ratio), carbs: Math.round(item.per100g.carbs * ratio), fat: Math.round(item.per100g.fat * ratio), servingG: grams };
 }
 
 // ── Save to Library Modal ─────────────────────────────────────────────────────
@@ -274,10 +228,8 @@ function SaveToLibraryModal({ item, libraryItems, userId, onSaved, onClose }) {
   const handleSave = async () => {
     if (!name.trim() || !unit.trim()) return;
     setSaving(true); setError(null);
-    try {
-      await saveFoodLibraryItem(userId, { name: name.trim(), unit: unit.trim(), calories: item.calories, protein: item.protein, carbs: item.carbs, fat: item.fat, barcode: item.barcode || null });
-      onSaved(name.trim());
-    } catch (e) { setError(e.message); } finally { setSaving(false); }
+    try { await saveFoodLibraryItem(userId, { name: name.trim(), unit: unit.trim(), calories: item.calories, protein: item.protein, carbs: item.carbs, fat: item.fat, barcode: item.barcode || null }); onSaved(name.trim()); }
+    catch (e) { setError(e.message); } finally { setSaving(false); }
   };
 
   const inputStyle = { width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '8px 10px', boxSizing: 'border-box' };
@@ -290,11 +242,7 @@ function SaveToLibraryModal({ item, libraryItems, userId, onSaved, onClose }) {
           {item.calories} cal · P:{item.protein}g · C:{item.carbs}g · F:{item.fat}g
           {item.barcode && <span style={{ marginLeft: 6, color: 'var(--text3)' }}>· #{item.barcode}</span>}
         </div>
-        {duplicate && (
-          <div style={{ padding: '10px 12px', background: 'rgba(255,160,0,0.1)', border: '1px solid rgba(255,160,0,0.4)', borderRadius: 4, marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>
-            This barcode already exists as <strong>{duplicate.name}</strong>. Saving again will create a duplicate.
-          </div>
-        )}
+        {duplicate && <div style={{ padding: '10px 12px', background: 'rgba(255,160,0,0.1)', border: '1px solid rgba(255,160,0,0.4)', borderRadius: 4, marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>This barcode already exists as <strong>{duplicate.name}</strong>. Saving again will create a duplicate.</div>}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <div style={{ flex: 2 }}>
             <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Name</div>
@@ -357,14 +305,8 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
         <div style={{ fontSize: 13, fontWeight: 500 }}>{item.name}</div>
         <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
           <span style={{ color: 'var(--accent)' }}>{Math.round(item.calories * qty)} cal</span>
-          {' · '}P:{Math.round(item.protein * qty)}g · C:{Math.round(item.carbs * qty)}g · F:{Math.round(item.fat * qty)}g
-          {' · '}per {item.unit} × {qty}
-          {(() => {
-            const match = item.unit.match(/(\d+(\.\d+)?)\s*g/i);
-            const unitGrams = match ? parseFloat(match[1]) : null;
-            const totalGrams = unitGrams ? Math.round(unitGrams * qty * 10) / 10 : null;
-            return totalGrams && qty !== 1 ? ` (${totalGrams}g)` : '';
-          })()}
+          {' · '}P:{Math.round(item.protein * qty)}g · C:{Math.round(item.carbs * qty)}g · F:{Math.round(item.fat * qty)}g · per {item.unit} × {qty}
+          {(() => { const match = item.unit.match(/(\d+(\.\d+)?)\s*g/i); const unitGrams = match ? parseFloat(match[1]) : null; const totalGrams = unitGrams ? Math.round(unitGrams * qty * 10) / 10 : null; return totalGrams && qty !== 1 ? ` (${totalGrams}g)` : ''; })()}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -379,7 +321,7 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
   );
 }
 
-// ── Saved Meal Row (with per-serving picker) ──────────────────────────────────
+// ── Saved Meal Row ────────────────────────────────────────────────────────────
 function SavedMealRow({ meal, onLog, onEdit, onDelete }) {
   const [qty, setQty] = useState(1);
   const totalServings = meal.servings || 1;
@@ -396,14 +338,9 @@ function SavedMealRow({ meal, onLog, onEdit, onDelete }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{meal.name}</div>
           <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-            <span style={{ color: 'var(--accent)' }}>{perServing.calories} cal</span>
-            {' · '}P:{perServing.protein}g · C:{perServing.carbs}g · F:{perServing.fat}g
+            <span style={{ color: 'var(--accent)' }}>{perServing.calories} cal</span>{' · '}P:{perServing.protein}g · C:{perServing.carbs}g · F:{perServing.fat}g
           </div>
-          {totalServings > 1 && (
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
-              {qty} of {totalServings} servings · {Math.round(meal.calories / totalServings)} cal each
-            </div>
-          )}
+          {totalServings > 1 && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{qty} of {totalServings} servings · {Math.round(meal.calories / totalServings)} cal each</div>}
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={onEdit} style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✏️</button>
@@ -456,19 +393,14 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
 
   const reloadLibrary = useCallback(async () => {
     const items = await fetchFoodLibrary();
-    setLibraryItems(items);
-    setLibraryLoaded(true);
+    setLibraryItems(items); setLibraryLoaded(true);
   }, []);
 
   useEffect(() => { if (!libraryLoaded) reloadLibrary(); }, [libraryLoaded, reloadLibrary]);
 
   const addFromLibrary = (item, qty) => {
     const q = Math.max(0.25, toNum(qty) || 1);
-    addIngredient({
-      description: `${item.name} (${q === 1 ? item.unit : `${q}x ${item.unit}`})`,
-      calories: Math.round(item.calories * q), protein: Math.round(item.protein * q),
-      carbs: Math.round(item.carbs * q), fat: Math.round(item.fat * q), source: 'library',
-    });
+    addIngredient({ description: `${item.name} (${q === 1 ? item.unit : `${q}x ${item.unit}`})`, calories: Math.round(item.calories * q), protein: Math.round(item.protein * q), carbs: Math.round(item.carbs * q), fat: Math.round(item.fat * q), source: 'library' });
   };
 
   const handleDeleteLibraryItem = async (itemId) => {
@@ -499,11 +431,8 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true); setSearchResults([]);
-    try {
-      const results = await searchFoodUSDA(searchQuery);
-      setSearchResults(results);
-      if (results.length === 0) showMsg('error', 'No results found.');
-    } catch (e) { showMsg('error', 'Search failed. Try again.'); }
+    try { const results = await searchFoodUSDA(searchQuery); setSearchResults(results); if (results.length === 0) showMsg('error', 'No results found.'); }
+    catch (e) { showMsg('error', 'Search failed. Try again.'); }
     finally { setSearching(false); }
   };
 
@@ -511,8 +440,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
     setScannerOpen(false); setBarcodeResult(null); setLookingUp(true);
     try {
       const [offResult, usdaResult] = await Promise.allSettled([lookupBarcode(barcode), lookupUSDABarcode(barcode)]);
-      const result = (offResult.status === 'fulfilled' && offResult.value) ? offResult.value :
-                     (usdaResult.status === 'fulfilled' && usdaResult.value) ? usdaResult.value : null;
+      const result = (offResult.status === 'fulfilled' && offResult.value) ? offResult.value : (usdaResult.status === 'fulfilled' && usdaResult.value) ? usdaResult.value : null;
       if (result) setBarcodeResult({ ...result, barcode });
       else showMsg('error', 'Product not found.');
     } catch (e) { showMsg('error', 'Barcode lookup failed.'); }
@@ -569,9 +497,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
       {subMode === 'library' && (
         <div>
           <input type="text" value={librarySearch} onChange={e => setLibrarySearch(e.target.value)} placeholder="Filter library..." style={{ ...inputStyle, marginBottom: 10 }} />
-          {libraryItems.length === 0 && libraryLoaded && (
-            <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: 16 }}>Library is empty. Use Search to find foods and save them here.</div>
-          )}
+          {libraryItems.length === 0 && libraryLoaded && <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: 16 }}>Library is empty. Use Search to find foods and save them here.</div>}
           {libraryItems.filter(i => !librarySearch || i.name.toLowerCase().includes(librarySearch.toLowerCase())).map(item => (
             <LibraryItemRow key={item.id} item={item} onAdd={addFromLibrary} onDelete={handleDeleteLibraryItem} onEdit={handleEditLibraryItem} />
           ))}
@@ -588,9 +514,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
             <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description}</div>
-                <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-                  <span style={{ color: 'var(--accent)' }}>{r.calories} cal</span> · P:{r.protein}g · C:{r.carbs}g · F:{r.fat}g · per {r.servingG}g
-                </div>
+                <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}><span style={{ color: 'var(--accent)' }}>{r.calories} cal</span> · P:{r.protein}g · C:{r.carbs}g · F:{r.fat}g · per {r.servingG}g</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0, marginLeft: 8 }}>
                 <button className="sync-btn" onClick={() => addIngredient(r)} style={{ padding: '6px 12px', fontSize: 12 }}>+ Add</button>
@@ -605,9 +529,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
         <div>
           {scannerOpen
             ? <BarcodeScanner onDetected={handleBarcodeDetected} onClose={() => setScannerOpen(false)} />
-            : <button className="sync-btn" onClick={() => { setBarcodeResult(null); setScannerOpen(true); }} disabled={lookingUp} style={{ width: '100%', padding: 12, marginBottom: 12 }}>
-                {lookingUp ? 'Looking up...' : '📷 Open Barcode Scanner'}
-              </button>
+            : <button className="sync-btn" onClick={() => { setBarcodeResult(null); setScannerOpen(true); }} disabled={lookingUp} style={{ width: '100%', padding: 12, marginBottom: 12 }}>{lookingUp ? 'Looking up...' : '📷 Open Barcode Scanner'}</button>
           }
           {!scannerOpen && (
             <div>
@@ -616,17 +538,12 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
                 <input type="text" placeholder="e.g. 012345678901" style={{ ...inputStyle, flex: 1, fontFamily: 'var(--font-mono)' }}
                   onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) handleBarcodeDetected(e.target.value.trim()); }}
                   id="manual-barcode-input" />
-                <button className="sync-btn" disabled={lookingUp}
-                  onClick={() => { const val = document.getElementById('manual-barcode-input').value.trim(); if (val) handleBarcodeDetected(val); }}
-                  style={{ flexShrink: 0, padding: '10px 14px' }}>{lookingUp ? '...' : 'Look up'}</button>
+                <button className="sync-btn" disabled={lookingUp} onClick={() => { const val = document.getElementById('manual-barcode-input').value.trim(); if (val) handleBarcodeDetected(val); }} style={{ flexShrink: 0, padding: '10px 14px' }}>{lookingUp ? '...' : 'Look up'}</button>
               </div>
               {barcodeResult && (
                 <div style={{ padding: 12, background: 'var(--bg3)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{barcodeResult.description}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', marginBottom: 10 }}>
-                    <span style={{ color: 'var(--accent)' }}>{barcodeResult.calories} cal</span>
-                    {' · '}P:{barcodeResult.protein}g · C:{barcodeResult.carbs}g · F:{barcodeResult.fat}g · per {barcodeResult.servingG}g
-                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', marginBottom: 10 }}><span style={{ color: 'var(--accent)' }}>{barcodeResult.calories} cal</span>{' · '}P:{barcodeResult.protein}g · C:{barcodeResult.carbs}g · F:{barcodeResult.fat}g · per {barcodeResult.servingG}g</div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="sync-btn" onClick={() => { addIngredient(barcodeResult); setBarcodeResult(null); }} style={{ flex: 1, padding: 10, fontSize: 13 }}>+ Add</button>
                     <button onClick={() => setSaveLibraryModal(barcodeResult)} style={{ flex: 1, padding: 10, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>📚 Save to Library</button>
@@ -664,8 +581,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
               </div>
               {ing.per100g && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                  <input type="number" value={ing.servingG} onChange={e => updateGrams(ing.id, e.target.value)}
-                    style={{ width: 58, padding: '4px 6px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right' }} />
+                  <input type="number" value={ing.servingG} onChange={e => updateGrams(ing.id, e.target.value)} style={{ width: 58, padding: '4px 6px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right' }} />
                   <span style={{ fontSize: 11, color: 'var(--text2)' }}>g</span>
                 </div>
               )}
@@ -689,6 +605,15 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
 export default function FoodLogTab({ data, userId }) {
   const { stats } = data;
   const tdee = stats?.tdee ?? null;
+
+  // ── Date navigation ──────────────────────────────────────────────────────
+  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const isToday = selectedDate === todayStr();
+
+  const goBack = () => setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), -1)));
+  const goForward = () => {
+    if (!isToday) setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), 1)));
+  };
 
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -719,17 +644,16 @@ export default function FoodLogTab({ data, userId }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  const today = todayStr();
   const showMsg = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3000); };
 
   const loadEntries = useCallback(async () => {
     setLoadingEntries(true);
     try {
       const all = await fetchFoodLog(userId);
-      setEntries(all.filter(e => e.date === today));
+      setEntries(all.filter(e => e.date === selectedDate));
     } catch (e) { console.error('Failed to load food log', e); }
     finally { setLoadingEntries(false); }
-  }, [userId, today]);
+  }, [userId, selectedDate]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
@@ -755,34 +679,21 @@ export default function FoodLogTab({ data, userId }) {
   const handleTextEstimate = useCallback(async () => {
     if (!textInput.trim()) return;
     setEstimating(true); setEstimate(null);
-    try {
-      const result = await estimateNutrition([{ role: 'user', content: textInput.trim() }]);
-      setEstimate({ ...result, source: 'AI text' });
-    } catch (e) { showMsg('error', 'AI estimate failed.'); }
+    try { const result = await estimateNutrition([{ role: 'user', content: textInput.trim() }]); setEstimate({ ...result, source: 'AI text' }); }
+    catch (e) { showMsg('error', 'AI estimate failed.'); }
     finally { setEstimating(false); }
   }, [textInput]);
 
   const handleCameraCapture = useCallback((blob) => {
-    setCameraOpen(false);
-    setPhotoBlob(blob);
-    setPhotoPreview(URL.createObjectURL(blob));
-    setEstimate(null);
+    setCameraOpen(false); setPhotoBlob(blob); setPhotoPreview(URL.createObjectURL(blob)); setEstimate(null);
   }, []);
 
   const handlePhotoEstimate = useCallback(async () => {
     if (!photoBlob) return;
     setAnalyzingPhoto(true); setEstimate(null);
     try {
-      const base64 = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result.split(',')[1]);
-        r.onerror = reject;
-        r.readAsDataURL(photoBlob);
-      });
-      const result = await estimateNutrition([{ role: 'user', content: [
-        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
-        { type: 'text', text: 'Estimate the calories and macros for the food shown in this photo.' },
-      ]}]);
+      const base64 = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result.split(',')[1]); r.onerror = reject; r.readAsDataURL(photoBlob); });
+      const result = await estimateNutrition([{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } }, { type: 'text', text: 'Estimate the calories and macros for the food shown in this photo.' }] }]);
       setEstimate({ ...result, source: 'photo' });
     } catch (e) { showMsg('error', `Photo analysis failed: ${e.message}`); }
     finally { setAnalyzingPhoto(false); }
@@ -793,43 +704,33 @@ export default function FoodLogTab({ data, userId }) {
     if (!toSave) return;
     setSaving(true);
     try {
-      await appendFoodEntry(userId, { date: today, time: nowTimeStr(), description: toSave.description, calories: toSave.calories, protein: toSave.protein, carbs: toSave.carbs, fat: toSave.fat, source: toSave.source || mode });
+      await appendFoodEntry(userId, { date: selectedDate, time: nowTimeStr(), description: toSave.description, calories: toSave.calories, protein: toSave.protein, carbs: toSave.carbs, fat: toSave.fat, source: toSave.source || mode });
       setEstimate(null); setTextInput(''); setPhotoBlob(null); setPhotoPreview(null);
       showMsg('success', 'Logged!');
       await loadEntries();
     } catch (e) { showMsg('error', `Save failed: ${e.message}`); }
     finally { setSaving(false); }
-  }, [estimate, userId, today, mode, loadEntries]);
+  }, [estimate, userId, selectedDate, mode, loadEntries]);
 
   const handleBuilderLog = useCallback(async (meal) => {
     setSaving(true);
     try {
-      await appendFoodEntry(userId, { date: today, time: nowTimeStr(), ...meal });
+      await appendFoodEntry(userId, { date: selectedDate, time: nowTimeStr(), ...meal });
       showMsg('success', 'Meal logged!');
       await loadEntries();
     } catch (e) { showMsg('error', `Save failed: ${e.message}`); }
     finally { setSaving(false); }
-  }, [userId, today, loadEntries]);
+  }, [userId, selectedDate, loadEntries]);
 
   const handleSaveRecipe = useCallback((meal) => {
-    setPendingSave(meal);
-    setSaveMealName(meal.name || '');
-    setSaveMealServings(1);
-    setSaveModalOpen(true);
+    setPendingSave(meal); setSaveMealName(meal.name || ''); setSaveMealServings(1); setSaveModalOpen(true);
   }, []);
 
   const handleConfirmSaveRecipe = useCallback(async () => {
     if (!pendingSave || !saveMealName.trim()) return;
     setSavingMeal(true);
     try {
-      await saveMeal(userId, {
-        name: saveMealName.trim(),
-        calories: pendingSave.calories,
-        protein:  pendingSave.protein,
-        carbs:    pendingSave.carbs,
-        fat:      pendingSave.fat,
-        servings: saveMealServings,
-      });
+      await saveMeal(userId, { name: saveMealName.trim(), calories: pendingSave.calories, protein: pendingSave.protein, carbs: pendingSave.carbs, fat: pendingSave.fat, servings: saveMealServings });
       setSaveModalOpen(false); setSaveMealName(''); setSaveMealServings(1); setPendingSave(null);
       showMsg('success', 'Recipe saved!');
     } catch (e) { showMsg('error', `Failed to save: ${e.message}`); }
@@ -839,25 +740,15 @@ export default function FoodLogTab({ data, userId }) {
   const handleLogSavedMeal = useCallback(async (meal, qty) => {
     const totalServings = meal.servings || 1;
     const ratio = qty / totalServings;
-    const description = totalServings > 1
-      ? `${meal.name} (${qty} of ${totalServings})`
-      : meal.name;
+    const description = totalServings > 1 ? `${meal.name} (${qty} of ${totalServings})` : meal.name;
     setSaving(true);
     try {
-      await appendFoodEntry(userId, {
-        date: today, time: nowTimeStr(),
-        description,
-        calories: Math.round(meal.calories * ratio),
-        protein:  Math.round(meal.protein  * ratio),
-        carbs:    Math.round(meal.carbs    * ratio),
-        fat:      Math.round(meal.fat      * ratio),
-        source: 'saved',
-      });
+      await appendFoodEntry(userId, { date: selectedDate, time: nowTimeStr(), description, calories: Math.round(meal.calories * ratio), protein: Math.round(meal.protein * ratio), carbs: Math.round(meal.carbs * ratio), fat: Math.round(meal.fat * ratio), source: 'saved' });
       showMsg('success', 'Logged!');
       await loadEntries();
     } catch (e) { showMsg('error', `Save failed: ${e.message}`); }
     finally { setSaving(false); }
-  }, [userId, today, loadEntries]);
+  }, [userId, selectedDate, loadEntries]);
 
   const handleDelete = useCallback(async (entry) => {
     try { await deleteFoodEntry(entry.id); await loadEntries(); }
@@ -905,12 +796,8 @@ export default function FoodLogTab({ data, userId }) {
         <MacroPill label="Carbs"    value={`${Math.round(est.carbs)}g`}    color="var(--blue)"   />
         <MacroPill label="Fat"      value={`${Math.round(est.fat)}g`}      color="var(--text2)"  />
       </div>
-      <button className="sync-btn" onClick={() => handleSave(est)} disabled={saving} style={{ width: '100%', padding: 12, fontSize: 14 }}>
-        {saving ? 'Saving...' : '+ Log This Meal'}
-      </button>
-      <button onClick={() => handleSaveRecipe(est)} style={{ width: '100%', marginTop: 8, padding: '10px', fontSize: 13, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer' }}>
-        Save as Meal
-      </button>
+      <button className="sync-btn" onClick={() => handleSave(est)} disabled={saving} style={{ width: '100%', padding: 12, fontSize: 14 }}>{saving ? 'Saving...' : '+ Log This Meal'}</button>
+      <button onClick={() => handleSaveRecipe(est)} style={{ width: '100%', marginTop: 8, padding: '10px', fontSize: 13, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer' }}>Save as Meal</button>
     </div>
   );
 
@@ -919,9 +806,24 @@ export default function FoodLogTab({ data, userId }) {
 
   return (
     <>
-      <div className="section-header">
+      <div className="section-header" style={{ marginBottom: 12 }}>
         <span className="section-title">FOOD LOG</span>
-        <span className="section-sub">{today}</span>
+      </div>
+
+      {/* ── Date Navigation ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '10px 16px', marginBottom: 20 }}>
+        <button onClick={goBack} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 22, cursor: 'pointer', padding: '0 8px', lineHeight: 1 }}>‹</button>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: isToday ? 'var(--accent)' : 'var(--text)', letterSpacing: '0.05em' }}>
+            {formatDisplayDate(selectedDate)}
+          </div>
+          {!isToday && (
+            <button onClick={() => setSelectedDate(todayStr())} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 11, cursor: 'pointer', padding: '2px 0', textDecoration: 'underline' }}>
+              back to today
+            </button>
+          )}
+        </div>
+        <button onClick={goForward} disabled={isToday} style={{ background: 'none', border: 'none', color: isToday ? 'var(--border)' : 'var(--accent)', fontSize: 22, cursor: isToday ? 'default' : 'pointer', padding: '0 8px', lineHeight: 1 }}>›</button>
       </div>
 
       <div className="stat-grid" style={{ marginBottom: 20, gridTemplateColumns: 'repeat(2,1fr)' }}>
@@ -938,12 +840,12 @@ export default function FoodLogTab({ data, userId }) {
         <div className="stat-card">
           <div className="stat-label">Protein</div>
           <div className="stat-value">{Math.round(totals.protein)}g</div>
-          <div className="stat-sub">today</div>
+          <div className="stat-sub">{formatDisplayDate(selectedDate).toLowerCase()}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Carbs / Fat</div>
           <div className="stat-value">{Math.round(totals.carbs)}g / {Math.round(totals.fat)}g</div>
-          <div className="stat-sub">today</div>
+          <div className="stat-sub">{formatDisplayDate(selectedDate).toLowerCase()}</div>
         </div>
       </div>
 
@@ -963,9 +865,7 @@ export default function FoodLogTab({ data, userId }) {
           <>
             <textarea value={textInput} onChange={e => setTextInput(e.target.value)} placeholder="Describe your meal..." rows={3}
               style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-body)', padding: '10px 12px', resize: 'none', boxSizing: 'border-box' }} />
-            <button className="sync-btn" onClick={handleTextEstimate} disabled={estimating || !textInput.trim()} style={{ width: '100%', marginTop: 10, padding: 12, fontSize: 14 }}>
-              {estimating ? 'Estimating...' : 'Estimate Calories'}
-            </button>
+            <button className="sync-btn" onClick={handleTextEstimate} disabled={estimating || !textInput.trim()} style={{ width: '100%', marginTop: 10, padding: 12, fontSize: 14 }}>{estimating ? 'Estimating...' : 'Estimate Calories'}</button>
             {estimate && <EstimateCard est={estimate} />}
           </>
         )}
@@ -978,9 +878,7 @@ export default function FoodLogTab({ data, userId }) {
               <>
                 <img src={photoPreview} alt="Food" style={{ width: '100%', borderRadius: 'var(--radius)', marginBottom: 10, maxHeight: 240, objectFit: 'cover' }} />
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="sync-btn" onClick={handlePhotoEstimate} disabled={analyzingPhoto} style={{ flex: 1, padding: 12, fontSize: 14 }}>
-                    {analyzingPhoto ? 'Analyzing...' : '🤖 Analyze Photo'}
-                  </button>
+                  <button className="sync-btn" onClick={handlePhotoEstimate} disabled={analyzingPhoto} style={{ flex: 1, padding: 12, fontSize: 14 }}>{analyzingPhoto ? 'Analyzing...' : '🤖 Analyze Photo'}</button>
                   <button className="logout-btn" onClick={() => { setPhotoBlob(null); setPhotoPreview(null); setEstimate(null); }} style={{ padding: '12px 16px' }}>Retake</button>
                 </div>
                 {estimate && <EstimateCard est={estimate} />}
@@ -1001,34 +899,23 @@ export default function FoodLogTab({ data, userId }) {
               <div key={meal.id}>
                 {editingMeal === meal.id ? (
                   <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                    <input value={editMealFields.name} onChange={e => setEditMealFields(f => ({ ...f, name: e.target.value }))}
-                      style={{ ...inputStyle, marginBottom: 8 }} placeholder="Meal name" />
+                    <input value={editMealFields.name} onChange={e => setEditMealFields(f => ({ ...f, name: e.target.value }))} style={{ ...inputStyle, marginBottom: 8 }} placeholder="Meal name" />
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 6, marginBottom: 8 }}>
                       {[['calories','Total Cal'],['protein','Total Pro (g)'],['carbs','Total Carb (g)'],['fat','Total Fat (g)']].map(([k, label]) => (
                         <div key={k}>
                           <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
-                          <input type="number" value={editMealFields[k]} onChange={e => setEditMealFields(f => ({ ...f, [k]: e.target.value }))}
-                            style={{ width: '100%', padding: '5px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
+                          <input type="number" value={editMealFields[k]} onChange={e => setEditMealFields(f => ({ ...f, [k]: e.target.value }))} style={{ width: '100%', padding: '5px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
                         </div>
                       ))}
                     </div>
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>Servings (portions this recipe makes)</div>
-                      <input type="number" min="1" value={editMealFields.servings}
-                        onChange={e => setEditMealFields(f => ({ ...f, servings: Math.max(1, parseInt(e.target.value) || 1) }))}
-                        style={{ width: '100%', padding: '5px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
+                      <input type="number" min="1" value={editMealFields.servings} onChange={e => setEditMealFields(f => ({ ...f, servings: Math.max(1, parseInt(e.target.value) || 1) }))} style={{ width: '100%', padding: '5px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="sync-btn" onClick={async () => {
                         try {
-                          await updateSavedMeal(meal.id, {
-                            name: editMealFields.name,
-                            calories: toNum(editMealFields.calories),
-                            protein:  toNum(editMealFields.protein),
-                            carbs:    toNum(editMealFields.carbs),
-                            fat:      toNum(editMealFields.fat),
-                            servings: parseInt(editMealFields.servings) || 1,
-                          });
+                          await updateSavedMeal(meal.id, { name: editMealFields.name, calories: toNum(editMealFields.calories), protein: toNum(editMealFields.protein), carbs: toNum(editMealFields.carbs), fat: toNum(editMealFields.fat), servings: parseInt(editMealFields.servings) || 1 });
                           setEditingMeal(null); loadSavedMeals(); showMsg('success', 'Meal updated!');
                         } catch (e) { showMsg('error', e.message); }
                       }} style={{ flex: 1, padding: 8, fontSize: 12 }}>Save</button>
@@ -1039,10 +926,7 @@ export default function FoodLogTab({ data, userId }) {
                   <SavedMealRow
                     meal={meal}
                     onLog={handleLogSavedMeal}
-                    onEdit={() => {
-                      setEditingMeal(meal.id);
-                      setEditMealFields({ name: meal.name, calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, servings: meal.servings || 1 });
-                    }}
+                    onEdit={() => { setEditingMeal(meal.id); setEditMealFields({ name: meal.name, calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, servings: meal.servings || 1 }); }}
                     onDelete={() => { deleteSavedMeal(meal.id); setSavedMeals(prev => prev.filter(m => m.id !== meal.id)); }}
                   />
                 )}
@@ -1055,22 +939,14 @@ export default function FoodLogTab({ data, userId }) {
       {saveModalOpen && (
         <div className="chart-card" style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>Save Recipe</div>
-          <input type="text" value={saveMealName} onChange={e => setSaveMealName(e.target.value)} placeholder="Recipe name" autoFocus
-            style={{ ...inputStyle, marginBottom: 12 }}
-            onKeyDown={e => { if (e.key === 'Escape') setSaveModalOpen(false); }} />
+          <input type="text" value={saveMealName} onChange={e => setSaveMealName(e.target.value)} placeholder="Recipe name" autoFocus style={{ ...inputStyle, marginBottom: 12 }} onKeyDown={e => { if (e.key === 'Escape') setSaveModalOpen(false); }} />
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8 }}>How many portions does this recipe make?</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button onClick={() => setSaveMealServings(s => Math.max(1, s - 1))}
-                style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+              <button onClick={() => setSaveMealServings(s => Math.max(1, s - 1))} style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
               <span style={{ fontSize: 22, fontWeight: 700, minWidth: 36, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{saveMealServings}</span>
-              <button onClick={() => setSaveMealServings(s => s + 1)}
-                style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-              {saveMealServings > 1 && pendingSave && (
-                <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                  {Math.round(pendingSave.calories / saveMealServings)} cal per portion
-                </span>
-              )}
+              <button onClick={() => setSaveMealServings(s => s + 1)} style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+              {saveMealServings > 1 && pendingSave && <span style={{ fontSize: 12, color: 'var(--text3)' }}>{Math.round(pendingSave.calories / saveMealServings)} cal per portion</span>}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -1082,24 +958,22 @@ export default function FoodLogTab({ data, userId }) {
 
       <div className="chart-card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 600, color: 'var(--text2)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-          Today's Entries
+          {formatDisplayDate(selectedDate)}'s Entries
         </div>
         {loadingEntries ? (
           <div style={{ padding: 20, color: 'var(--text2)', fontSize: 13, textAlign: 'center' }}>Loading...</div>
         ) : entries.length === 0 ? (
-          <div style={{ padding: 20, color: 'var(--text3)', fontSize: 13, textAlign: 'center' }}>No entries yet today</div>
+          <div style={{ padding: 20, color: 'var(--text3)', fontSize: 13, textAlign: 'center' }}>No entries for {formatDisplayDate(selectedDate).toLowerCase()}</div>
         ) : entries.map(e => (
           <div key={e.id}>
             {editingEntry === e.id ? (
               <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)' }}>
-                <input value={editFields.description} onChange={ev => setEditFields(f => ({ ...f, description: ev.target.value }))}
-                  style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 10px', boxSizing: 'border-box', marginBottom: 8 }} />
+                <input value={editFields.description} onChange={ev => setEditFields(f => ({ ...f, description: ev.target.value }))} style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 10px', boxSizing: 'border-box', marginBottom: 8 }} />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginBottom: 8 }}>
                   {[['calories','Cal'],['protein','Pro'],['carbs','Carb'],['fat','Fat']].map(([k, label]) => (
                     <div key={k}>
                       <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
-                      <input type="number" value={editFields[k]} onChange={ev => setEditFields(f => ({ ...f, [k]: ev.target.value }))}
-                        style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, padding: '5px', fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
+                      <input type="number" value={editFields[k]} onChange={ev => setEditFields(f => ({ ...f, [k]: ev.target.value }))} style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, padding: '5px', fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
                     </div>
                   ))}
                 </div>
