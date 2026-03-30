@@ -26,10 +26,9 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
   const { weight, stats } = data;
   const goalWeight = stats.goalWeight || 180;
 
-  // Log weight state
-  const [weightInput, setWeightInput]   = useState('');
-  const [logging, setLogging]           = useState(false);
-  const [logMsg, setLogMsg]             = useState(null);
+  const [weightInput, setWeightInput] = useState('');
+  const [logging, setLogging]         = useState(false);
+  const [logMsg, setLogMsg]           = useState(null);
 
   const handleLogWeight = async () => {
     const lbs = parseFloat(weightInput);
@@ -41,23 +40,39 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
     setLogMsg(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const headers = {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey':        ANON_KEY,
+      };
+
+      // Post weight to Fitbit
       const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/log-weight`, {
         method: 'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey':        ANON_KEY,
-        },
+        headers,
         body: JSON.stringify({ user_id: userId, weight_lbs: lbs }),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || `Error ${res.status}`);
       }
+
       setWeightInput('');
-      setLogMsg({ type: 'success', text: `${lbs} lbs logged to Fitbit!` });
+      setLogMsg({ type: 'success', text: `${lbs} lbs logged — syncing Fitbit...` });
+
+      // Auto-sync Fitbit so chart updates immediately
+      try {
+        await fetch(`${SUPABASE_FUNCTIONS_URL}/sync-fitbit`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ user_id: userId }),
+        });
+      } catch (_) {
+        // Sync failure is non-fatal -- data will catch up on next scheduled sync
+      }
+
+      setLogMsg({ type: 'success', text: `${lbs} lbs logged!` });
       setTimeout(() => setLogMsg(null), 3000);
-      // Notify parent to reload data so chart updates
       if (onWeightLogged) onWeightLogged();
     } catch (e) {
       setLogMsg({ type: 'error', text: e.message });
@@ -66,15 +81,11 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
     }
   };
 
-  // All weight entries with trend
   const chartData = useMemo(() => {
     const entries = weight.filter(w => w.weight).sort((a, b) => a.date - b.date);
     if (!entries.length) return [];
     const startDate = entries[0].date;
-    const points = entries.map(e => ({
-      x: differenceInDays(e.date, startDate),
-      y: e.weight,
-    }));
+    const points = entries.map(e => ({ x: differenceInDays(e.date, startDate), y: e.weight }));
     const reg = linearRegression(points);
     return entries.map((e, i) => ({
       date:   format(e.date, 'MMM d'),
@@ -125,7 +136,6 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
         <span className="section-sub">{weight.length} weigh-ins</span>
       </div>
 
-      {/* Log weight */}
       <div className="chart-card" style={{ marginBottom: 20 }}>
         <div className="chart-title">Log Today's Weight</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -144,7 +154,7 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
             disabled={logging || !weightInput}
             style={{ padding: '10px 20px' }}
           >
-            {logging ? '...' : 'Log to Fitbit'}
+            {logging ? 'Logging...' : 'Log to Fitbit'}
           </button>
         </div>
         {logMsg && (
@@ -191,7 +201,6 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
         </div>
       </div>
 
-      {/* Progress bar */}
       {startWeight && currentWeight && (
         <div style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 11, color: 'var(--text3)' }}>
@@ -208,7 +217,6 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
         </div>
       )}
 
-      {/* Full weight chart */}
       <div className="chart-card">
         <div className="chart-title">Weight History + Trend Line</div>
         {chartData.length > 1 ? (
@@ -243,7 +251,6 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
         )}
       </div>
 
-      {/* BMR/TDEE info */}
       {stats.bmr && (
         <div className="chart-card" style={{ marginTop: 16 }}>
           <div className="chart-title">Metabolic Estimates — Updated with Current Weight (age {stats.age})</div>
