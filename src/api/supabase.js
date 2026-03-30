@@ -217,6 +217,7 @@ export async function saveMeal(userId, meal) {
       protein:  meal.protein  || 0,
       carbs:    meal.carbs    || 0,
       fat:      meal.fat      || 0,
+      servings: meal.servings || 1,
       notes:    meal.notes    || null,
     });
   if (error) throw new Error(error.message);
@@ -239,6 +240,7 @@ export async function updateSavedMeal(mealId, meal) {
       protein:  meal.protein,
       carbs:    meal.carbs,
       fat:      meal.fat,
+      servings: meal.servings || 1,
       notes:    meal.notes || null,
     })
     .eq('id', mealId);
