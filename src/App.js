@@ -112,20 +112,10 @@ export default function App() {
     window.history.replaceState({}, '', '/');
   }, []);
 
-  // Only block render on the very first auth + onboarding check
   if (!authChecked || checkingOnboarding) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
         <div style={{ color: 'var(--text3)', fontSize: 14 }}>Loading...</div>
-        {/* temporary debug -- remove after testing */}
-        <div style={{ position: 'fixed', top: 0, left: 0, background: 'red', color: '#fff', fontSize: 10, zIndex: 9999, padding: '4px 8px', lineHeight: 1.6 }}>
-          APP LOADING SCREEN<br/>
-          authChecked: {String(authChecked)}<br/>
-          checkingOnboarding: {String(checkingOnboarding)}<br/>
-          onboardingDone: {String(onboardingDone)}<br/>
-          session: {session === undefined ? 'undefined' : session ? 'exists' : 'null'}<br/>
-          stored tab: {localStorage.getItem('activeTab') || 'null'}
-        </div>
       </div>
     );
   }
