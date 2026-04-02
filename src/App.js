@@ -52,10 +52,10 @@ function LoginScreen({ expired = false }) {
 }
 
 export default function App() {
-  const [session, setSession]                   = useState(undefined);
-  const [onboardingDone, setOnboardingDone]     = useState(false);
+  const [session, setSession]                       = useState(undefined);
+  const [onboardingDone, setOnboardingDone]         = useState(false);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
-  const [authChecked, setAuthChecked]           = useState(false);
+  const [authChecked, setAuthChecked]               = useState(false);
 
   // Handle Fitbit callback redirect
   useEffect(() => {
@@ -89,12 +89,12 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Onboarding check -- only runs once per session, skips if already confirmed done
+  // Onboarding check -- only runs once, skips if already confirmed done
   useEffect(() => {
     if (!session) return;
     const path = window.location.pathname;
     if (path === '/onboarding') return;
-    if (onboardingDone) return; // don't re-check and remount Dashboard on token refresh
+    if (onboardingDone) return;
     setCheckingOnboarding(true);
     supabase
       .from('user_integrations')
@@ -117,6 +117,15 @@ export default function App() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
         <div style={{ color: 'var(--text3)', fontSize: 14 }}>Loading...</div>
+        {/* temporary debug -- remove after testing */}
+        <div style={{ position: 'fixed', top: 0, left: 0, background: 'red', color: '#fff', fontSize: 10, zIndex: 9999, padding: '4px 8px', lineHeight: 1.6 }}>
+          APP LOADING SCREEN<br/>
+          authChecked: {String(authChecked)}<br/>
+          checkingOnboarding: {String(checkingOnboarding)}<br/>
+          onboardingDone: {String(onboardingDone)}<br/>
+          session: {session === undefined ? 'undefined' : session ? 'exists' : 'null'}<br/>
+          stored tab: {localStorage.getItem('activeTab') || 'null'}
+        </div>
       </div>
     );
   }
