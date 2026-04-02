@@ -84,20 +84,20 @@ function NavIcon({ icon, active }) {
 export default function Dashboard({ session, onLogout }) {
   const userId = session.user.id;
 
-  // Persist active tab across remounts
-  const [tab, setTab] = useState(() => sessionStorage.getItem('activeTab') || 'overview');
-  const [menuOpen, setMenuOpen]     = useState(false);
-  const [loading, setLoading]       = useState(true);
+  // Persist active tab across full page reloads using localStorage
+  const [tab, setTab] = useState(() => localStorage.getItem('activeTab') || 'overview');
+  const [menuOpen, setMenuOpen]       = useState(false);
+  const [loading, setLoading]         = useState(true);
   const [initialLoad, setInitialLoad] = useState(true);
-  const [error, setError]           = useState(null);
-  const [data, setData]             = useState(null);
-  const [goalWeight, setGoalWeight] = useState(180);
-  const [syncing, setSyncing]       = useState(null);
-  const [syncMsg, setSyncMsg]       = useState(null);
+  const [error, setError]             = useState(null);
+  const [data, setData]               = useState(null);
+  const [goalWeight, setGoalWeight]   = useState(180);
+  const [syncing, setSyncing]         = useState(null);
+  const [syncMsg, setSyncMsg]         = useState(null);
 
-  // Always persist tab to sessionStorage when it changes
+  // Persists tab to localStorage on every navigation
   const navigateTab = useCallback((id) => {
-    sessionStorage.setItem('activeTab', id);
+    localStorage.setItem('activeTab', id);
     setTab(id);
     setMenuOpen(false);
   }, []);
@@ -125,7 +125,7 @@ export default function Dashboard({ session, onLogout }) {
     }
   }, [userId]);
 
-  // Initial load only -- subsequent reloads are silent
+  // Show spinner on initial load only -- subsequent refreshes are silent
   useEffect(() => {
     loadData(true);
   }, [loadData]);
