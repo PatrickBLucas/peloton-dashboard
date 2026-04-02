@@ -95,6 +95,9 @@ export default function Dashboard({ session, onLogout }) {
   const [syncing, setSyncing]         = useState(null);
   const [syncMsg, setSyncMsg]         = useState(null);
 
+  // temporary debug -- remove after testing
+  const [debugTab] = useState(() => localStorage.getItem('activeTab'));
+
   // Persists tab to localStorage on every navigation
   const navigateTab = useCallback((id) => {
     localStorage.setItem('activeTab', id);
@@ -171,6 +174,12 @@ export default function Dashboard({ session, onLogout }) {
 
   return (
     <div className="dashboard">
+
+      {/* temporary debug -- remove after testing */}
+      <div style={{ position: 'fixed', top: 0, left: 0, background: 'red', color: '#fff', fontSize: 10, zIndex: 9999, padding: '2px 6px' }}>
+        stored: {debugTab} | current: {tab}
+      </div>
+
       <header className="topbar">
         <span className="topbar-logo">THRIVEMETRICS</span>
         <nav className="topbar-nav">
