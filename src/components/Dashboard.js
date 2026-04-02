@@ -177,7 +177,7 @@ export default function Dashboard({ session, onLogout }) {
 
       {/* temporary debug -- remove after testing */}
       <div style={{
-        position: 'fixed', bottom: 65, left: 0, right: 0,
+        position: 'fixed', top: 56, left: 0, right: 0,
         background: 'red', color: '#fff', fontSize: 11,
         zIndex: 9999, padding: '6px 10px', lineHeight: 1.8,
         textAlign: 'center',
