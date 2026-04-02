@@ -52,9 +52,10 @@ function LoginScreen({ expired = false }) {
 }
 
 export default function App() {
-  const [session, setSession]               = useState(undefined);
-  const [onboardingDone, setOnboardingDone] = useState(false);
+  const [session, setSession]                   = useState(undefined);
+  const [onboardingDone, setOnboardingDone]     = useState(false);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
+  const [authChecked, setAuthChecked]           = useState(false);
 
   // Handle Fitbit callback redirect
   useEffect(() => {
@@ -75,20 +76,25 @@ export default function App() {
     }
   }, []);
 
+  // Auth state -- mark authChecked once we have an answer, don't re-trigger loading on token refresh
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setAuthChecked(true);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      setAuthChecked(true);
     });
     return () => subscription.unsubscribe();
   }, []);
 
+  // Onboarding check -- only runs once per session, skips if already confirmed done
   useEffect(() => {
     if (!session) return;
     const path = window.location.pathname;
     if (path === '/onboarding') return;
+    if (onboardingDone) return; // don't re-check and remount Dashboard on token refresh
     setCheckingOnboarding(true);
     supabase
       .from('user_integrations')
@@ -99,14 +105,15 @@ export default function App() {
         setOnboardingDone(!!(data?.strava_refresh_token && data?.fitbit_refresh_token));
         setCheckingOnboarding(false);
       });
-  }, [session]);
+  }, [session, onboardingDone]);
 
   const handleOnboardingComplete = useCallback(() => {
     setOnboardingDone(true);
     window.history.replaceState({}, '', '/');
   }, []);
 
-  if (session === undefined || checkingOnboarding) {
+  // Only block render on the very first auth + onboarding check
+  if (!authChecked || checkingOnboarding) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
         <div style={{ color: 'var(--text3)', fontSize: 14 }}>Loading...</div>
