@@ -84,18 +84,27 @@ function NavIcon({ icon, active }) {
 export default function Dashboard({ session, onLogout }) {
   const userId = session.user.id;
 
-  const [tab, setTab]               = useState('overview');
+  // Persist active tab across remounts
+  const [tab, setTab] = useState(() => sessionStorage.getItem('activeTab') || 'overview');
   const [menuOpen, setMenuOpen]     = useState(false);
   const [loading, setLoading]       = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError]           = useState(null);
   const [data, setData]             = useState(null);
   const [goalWeight, setGoalWeight] = useState(180);
   const [syncing, setSyncing]       = useState(null);
   const [syncMsg, setSyncMsg]       = useState(null);
 
-  const loadData = useCallback(async () => {
+  // Always persist tab to sessionStorage when it changes
+  const navigateTab = useCallback((id) => {
+    sessionStorage.setItem('activeTab', id);
+    setTab(id);
+    setMenuOpen(false);
+  }, []);
+
+  const loadData = useCallback(async (showSpinner = false) => {
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       setError(null);
       const [workouts, fitbit, weight, tracker, fetchedGoal, foodLog] = await Promise.all([
         fetchWorkouts(userId),
@@ -112,10 +121,14 @@ export default function Dashboard({ session, onLogout }) {
       setError(e.message);
     } finally {
       setLoading(false);
+      setInitialLoad(false);
     }
   }, [userId]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // Initial load only -- subsequent reloads are silent
+  useEffect(() => {
+    loadData(true);
+  }, [loadData]);
 
   const handleSync = useCallback(async (type) => {
     setSyncing(type);
@@ -145,8 +158,6 @@ export default function Dashboard({ session, onLogout }) {
     ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
 
-  const navigateTo = (id) => { setTab(id); setMenuOpen(false); };
-
   const SyncButtons = ({ mobile = false }) => (
     <>
       <button className="sync-btn" onClick={() => handleSync('fitbit')} disabled={syncing !== null} style={mobile ? { width: '100%' } : {}}>
@@ -164,7 +175,7 @@ export default function Dashboard({ session, onLogout }) {
         <span className="topbar-logo">THRIVEMETRICS</span>
         <nav className="topbar-nav">
           {TABS.map(t => (
-            <button key={t.id} className={`nav-btn${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>
+            <button key={t.id} className={`nav-btn${tab === t.id ? ' active' : ''}`} onClick={() => navigateTab(t.id)}>
               {t.label}
             </button>
           ))}
@@ -173,12 +184,12 @@ export default function Dashboard({ session, onLogout }) {
           <div className="topbar-actions desktop-actions">
             <SyncButtons />
             {syncTime && <span className="sync-time">loaded {syncTime}</span>}
-            <button className="sync-btn" onClick={() => navigateTo('settings')}>⚙ Settings</button>
+            <button className="sync-btn" onClick={() => navigateTab('settings')}>⚙ Settings</button>
             <button className="logout-btn" onClick={onLogout}>Sign out</button>
           </div>
           <div className="topbar-overflow-tabs">
             {OVERFLOW_TABS.map(t => (
-              <button key={t.id} className={`overflow-tab-btn${tab === t.id ? ' active' : ''}`} onClick={() => { setTab(t.id); setMenuOpen(false); }}>
+              <button key={t.id} className={`overflow-tab-btn${tab === t.id ? ' active' : ''}`} onClick={() => navigateTab(t.id)}>
                 {t.label}
               </button>
             ))}
@@ -192,10 +203,10 @@ export default function Dashboard({ session, onLogout }) {
       {menuOpen && (
         <div className="mobile-menu">
           <SyncButtons mobile />
-          <button className="sync-btn" onClick={() => navigateTo('settings')} style={{ width: '100%' }}>
+          <button className="sync-btn" onClick={() => navigateTab('settings')} style={{ width: '100%' }}>
             ⚙ Settings
           </button>
-          <button className="sync-btn" onClick={() => navigateTo('108')} style={{ width: '100%' }}>
+          <button className="sync-btn" onClick={() => navigateTab('108')} style={{ width: '100%' }}>
             10-8 Tracker
           </button>
           {syncTime && <span className="sync-time">loaded {syncTime}</span>}
@@ -205,7 +216,7 @@ export default function Dashboard({ session, onLogout }) {
 
       <nav className="bottom-nav">
         {BOTTOM_TABS.map(t => (
-          <button key={t.id} className={`bottom-nav-btn${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>
+          <button key={t.id} className={`bottom-nav-btn${tab === t.id ? ' active' : ''}`} onClick={() => navigateTab(t.id)}>
             <NavIcon icon={t.icon} active={tab === t.id} />
             <span className="bottom-nav-label">{t.label}</span>
           </button>
@@ -217,7 +228,7 @@ export default function Dashboard({ session, onLogout }) {
       )}
 
       <main className="main-content">
-        {loading && (
+        {loading && initialLoad && (
           <div className="loading-screen">
             <div className="spinner" />
             <span>Loading your data...</span>
@@ -237,16 +248,16 @@ export default function Dashboard({ session, onLogout }) {
             {tab === 'foodlog'   && <FoodLogTab data={data} userId={userId} />}
             {tab === 'bestrides' && <BestRidesTab data={data} />}
             {tab === 'coach'     && <CoachTab userId={userId} />}
-            {tab === 'settings' && (
-  <SettingsTab
-    userId={userId}
-    onSaved={async () => {
-      await loadData();
-      setTab('overview');
-    }}
-    onClose={() => setTab('overview')}
-  />
-)}
+            {tab === 'settings'  && (
+              <SettingsTab
+                userId={userId}
+                onSaved={async () => {
+                  await loadData();
+                  navigateTab('overview');
+                }}
+                onClose={() => navigateTab('overview')}
+              />
+            )}
           </>
         )}
       </main>
