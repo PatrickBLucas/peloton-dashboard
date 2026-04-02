@@ -176,8 +176,13 @@ export default function Dashboard({ session, onLogout }) {
     <div className="dashboard">
 
       {/* temporary debug -- remove after testing */}
-      <div style={{ position: 'fixed', top: 0, left: 0, background: 'red', color: '#fff', fontSize: 10, zIndex: 9999, padding: '2px 6px' }}>
-        stored: {debugTab} | current: {tab}
+      <div style={{
+        position: 'fixed', bottom: 65, left: 0, right: 0,
+        background: 'red', color: '#fff', fontSize: 11,
+        zIndex: 9999, padding: '6px 10px', lineHeight: 1.8,
+        textAlign: 'center',
+      }}>
+        stored: {debugTab ?? 'null'} | current: {tab} | match: {String(debugTab === tab)}
       </div>
 
       <header className="topbar">
