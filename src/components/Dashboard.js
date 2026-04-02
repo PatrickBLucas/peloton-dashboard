@@ -84,7 +84,6 @@ function NavIcon({ icon, active }) {
 export default function Dashboard({ session, onLogout }) {
   const userId = session.user.id;
 
-  // Persist active tab across full page reloads using localStorage
   const [tab, setTab] = useState(() => localStorage.getItem('activeTab') || 'overview');
   const [menuOpen, setMenuOpen]       = useState(false);
   const [loading, setLoading]         = useState(true);
@@ -95,10 +94,6 @@ export default function Dashboard({ session, onLogout }) {
   const [syncing, setSyncing]         = useState(null);
   const [syncMsg, setSyncMsg]         = useState(null);
 
-  // temporary debug -- remove after testing
-  const [debugTab] = useState(() => localStorage.getItem('activeTab'));
-
-  // Persists tab to localStorage on every navigation
   const navigateTab = useCallback((id) => {
     localStorage.setItem('activeTab', id);
     setTab(id);
@@ -128,7 +123,6 @@ export default function Dashboard({ session, onLogout }) {
     }
   }, [userId]);
 
-  // Show spinner on initial load only -- subsequent refreshes are silent
   useEffect(() => {
     loadData(true);
   }, [loadData]);
@@ -174,17 +168,6 @@ export default function Dashboard({ session, onLogout }) {
 
   return (
     <div className="dashboard">
-
-      {/* temporary debug -- remove after testing */}
-      <div style={{
-        position: 'fixed', top: 56, left: 0, right: 0,
-        background: 'red', color: '#fff', fontSize: 11,
-        zIndex: 9999, padding: '6px 10px', lineHeight: 1.8,
-        textAlign: 'center',
-      }}>
-        stored: {debugTab ?? 'null'} | current: {tab} | match: {String(debugTab === tab)}
-      </div>
-
       <header className="topbar">
         <span className="topbar-logo">THRIVEMETRICS</span>
         <nav className="topbar-nav">
