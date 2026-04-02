@@ -23,9 +23,41 @@ function formatDisplayDate(ds) {
   const dt = new Date(y, m - 1, d);
   return dt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
+
+// Store time in 24-hour HH:MM format for compatibility with <input type="time">
 function nowTimeStr() {
-  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
+
+// Display time in 12-hour format for the entry list
+function displayTime(t) {
+  if (!t) return '';
+  // Already 12-hour format (legacy entries like "09:23 AM")
+  if (t.includes('AM') || t.includes('PM')) return t;
+  // Convert 24-hour HH:MM to 12-hour
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+// Convert legacy 12-hour time string to 24-hour for the time input
+function toInputTime(t) {
+  if (!t) return nowTimeStr();
+  // Already 24-hour format
+  if (/^\d{2}:\d{2}$/.test(t)) return t;
+  // Convert "9:23 AM" / "09:23 AM" style
+  const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return nowTimeStr();
+  let h = parseInt(match[1]);
+  const m = match[2];
+  const ampm = match[3].toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2,'0')}:${m}`;
+}
+
 function toNum(v) { return parseFloat(v) || 0; }
 
 // ── Barcode validation ────────────────────────────────────────────────────────
@@ -606,14 +638,11 @@ export default function FoodLogTab({ data, userId }) {
   const { stats } = data;
   const tdee = stats?.tdee ?? null;
 
-  // ── Date navigation ──────────────────────────────────────────────────────
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const isToday = selectedDate === todayStr();
 
   const goBack = () => setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), -1)));
-  const goForward = () => {
-    if (!isToday) setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), 1)));
-  };
+  const goForward = () => { if (!isToday) setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), 1))); };
 
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -757,7 +786,14 @@ export default function FoodLogTab({ data, userId }) {
 
   const startEdit = (entry) => {
     setEditingEntry(entry.id);
-    setEditFields({ description: entry.description, calories: entry.calories, protein: entry.protein, carbs: entry.carbs, fat: entry.fat });
+    setEditFields({
+      description: entry.description,
+      calories: entry.calories,
+      protein: entry.protein,
+      carbs: entry.carbs,
+      fat: entry.fat,
+      time: toInputTime(entry.time),
+    });
   };
 
   const handleEditSave = useCallback(async () => {
@@ -766,7 +802,16 @@ export default function FoodLogTab({ data, userId }) {
     try {
       const orig = entries.find(e => e.id === editingEntry);
       await deleteFoodEntry(editingEntry);
-      await appendFoodEntry(userId, { date: orig.date, time: orig.time, description: editFields.description, calories: toNum(editFields.calories), protein: toNum(editFields.protein), carbs: toNum(editFields.carbs), fat: toNum(editFields.fat), source: orig.source || 'edit' });
+      await appendFoodEntry(userId, {
+        date: orig.date,
+        time: editFields.time || orig.time,
+        description: editFields.description,
+        calories: toNum(editFields.calories),
+        protein: toNum(editFields.protein),
+        carbs: toNum(editFields.carbs),
+        fat: toNum(editFields.fat),
+        source: orig.source || 'edit',
+      });
       setEditingEntry(null);
       showMsg('success', 'Updated!');
       await loadEntries();
@@ -803,6 +848,7 @@ export default function FoodLogTab({ data, userId }) {
 
   const inputStyle = { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14, padding: '10px 12px', boxSizing: 'border-box', fontFamily: 'var(--font-body)' };
   const numStyle = { ...inputStyle, fontFamily: 'var(--font-mono)', textAlign: 'right' };
+  const editInputBase = { width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, padding: '5px', boxSizing: 'border-box' };
 
   return (
     <>
@@ -904,13 +950,13 @@ export default function FoodLogTab({ data, userId }) {
                       {[['calories','Total Cal'],['protein','Total Pro (g)'],['carbs','Total Carb (g)'],['fat','Total Fat (g)']].map(([k, label]) => (
                         <div key={k}>
                           <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
-                          <input type="number" value={editMealFields[k]} onChange={e => setEditMealFields(f => ({ ...f, [k]: e.target.value }))} style={{ width: '100%', padding: '5px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
+                          <input type="number" value={editMealFields[k]} onChange={e => setEditMealFields(f => ({ ...f, [k]: e.target.value }))} style={{ ...editInputBase, fontFamily: 'var(--font-mono)', textAlign: 'right' }} />
                         </div>
                       ))}
                     </div>
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>Servings (portions this recipe makes)</div>
-                      <input type="number" min="1" value={editMealFields.servings} onChange={e => setEditMealFields(f => ({ ...f, servings: Math.max(1, parseInt(e.target.value) || 1) }))} style={{ width: '100%', padding: '5px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
+                      <input type="number" min="1" value={editMealFields.servings} onChange={e => setEditMealFields(f => ({ ...f, servings: Math.max(1, parseInt(e.target.value) || 1) }))} style={{ ...editInputBase, fontFamily: 'var(--font-mono)', textAlign: 'right' }} />
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="sync-btn" onClick={async () => {
@@ -968,12 +1014,29 @@ export default function FoodLogTab({ data, userId }) {
           <div key={e.id}>
             {editingEntry === e.id ? (
               <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)' }}>
-                <input value={editFields.description} onChange={ev => setEditFields(f => ({ ...f, description: ev.target.value }))} style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 10px', boxSizing: 'border-box', marginBottom: 8 }} />
+                {/* Time field */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Time eaten</div>
+                  <input
+                    type="time"
+                    value={editFields.time}
+                    onChange={ev => setEditFields(f => ({ ...f, time: ev.target.value }))}
+                    style={{ ...editInputBase, border: '1px solid var(--accent)', fontSize: 13, padding: '6px 10px' }}
+                  />
+                </div>
+                {/* Description field */}
+                <input
+                  value={editFields.description}
+                  onChange={ev => setEditFields(f => ({ ...f, description: ev.target.value }))}
+                  style={{ ...editInputBase, border: '1px solid var(--accent)', fontSize: 13, padding: '6px 10px', marginBottom: 8 }}
+                />
+                {/* Macro fields */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginBottom: 8 }}>
                   {[['calories','Cal'],['protein','Pro'],['carbs','Carb'],['fat','Fat']].map(([k, label]) => (
                     <div key={k}>
                       <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
-                      <input type="number" value={editFields[k]} onChange={ev => setEditFields(f => ({ ...f, [k]: ev.target.value }))} style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, padding: '5px', fontFamily: 'var(--font-mono)', textAlign: 'right', boxSizing: 'border-box' }} />
+                      <input type="number" value={editFields[k]} onChange={ev => setEditFields(f => ({ ...f, [k]: ev.target.value }))}
+                        style={{ ...editInputBase, fontFamily: 'var(--font-mono)', textAlign: 'right' }} />
                     </div>
                   ))}
                 </div>
@@ -987,7 +1050,7 @@ export default function FoodLogTab({ data, userId }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.description}</div>
                   <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-                    {e.time} · <span style={{ color: 'var(--accent)' }}>{e.calories} cal</span> · P:{e.protein}g · C:{e.carbs}g · F:{e.fat}g
+                    {displayTime(e.time)} · <span style={{ color: 'var(--accent)' }}>{e.calories} cal</span> · P:{e.protein}g · C:{e.carbs}g · F:{e.fat}g
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
