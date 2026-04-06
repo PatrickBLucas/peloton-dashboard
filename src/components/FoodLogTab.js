@@ -23,31 +23,21 @@ function formatDisplayDate(ds) {
   const dt = new Date(y, m - 1, d);
   return dt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
-
-// Store time in 24-hour HH:MM format for compatibility with <input type="time">
 function nowTimeStr() {
   const d = new Date();
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
-
-// Display time in 12-hour format for the entry list
 function displayTime(t) {
   if (!t) return '';
-  // Already 12-hour format (legacy entries like "09:23 AM")
   if (t.includes('AM') || t.includes('PM')) return t;
-  // Convert 24-hour HH:MM to 12-hour
   const [h, m] = t.split(':').map(Number);
   const ampm = h >= 12 ? 'PM' : 'AM';
   const hour = h % 12 || 12;
   return `${hour}:${String(m).padStart(2,'0')} ${ampm}`;
 }
-
-// Convert legacy 12-hour time string to 24-hour for the time input
 function toInputTime(t) {
   if (!t) return nowTimeStr();
-  // Already 24-hour format
   if (/^\d{2}:\d{2}$/.test(t)) return t;
-  // Convert "9:23 AM" / "09:23 AM" style
   const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
   if (!match) return nowTimeStr();
   let h = parseInt(match[1]);
@@ -57,7 +47,6 @@ function toInputTime(t) {
   if (ampm === 'AM' && h === 12) h = 0;
   return `${String(h).padStart(2,'0')}:${m}`;
 }
-
 function toNum(v) { return parseFloat(v) || 0; }
 
 // ── Barcode validation ────────────────────────────────────────────────────────
@@ -67,9 +56,7 @@ function validateBarcode(barcode) {
   const digits = str.split('').map(Number);
   const check = digits.pop();
   const sum = digits.reduce((s, d, i) => {
-    const weight = (str.length === 8 || str.length === 13)
-      ? (i % 2 === 0 ? 1 : 3)
-      : (i % 2 === 0 ? 3 : 1);
+    const weight = (str.length === 8 || str.length === 13) ? (i % 2 === 0 ? 1 : 3) : (i % 2 === 0 ? 3 : 1);
     return s + d * weight;
   }, 0);
   return (10 - (sum % 10)) % 10 === check;
@@ -87,18 +74,15 @@ function BarcodeScanner({ onDetected, onClose }) {
     async function start() {
       if (!('BarcodeDetector' in window)) { setStatus('Barcode scanning not supported on this browser.'); return; }
       let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } });
-      } catch (e) { setStatus(`Camera error: ${e.message}`); return; }
+      try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } }); }
+      catch (e) { setStatus(`Camera error: ${e.message}`); return; }
       streamRef.current = stream;
       const video = videoRef.current;
       video.srcObject = stream;
       await video.play();
       const track = stream.getVideoTracks()[0];
       const capabilities = track.getCapabilities();
-      if (capabilities.focusMode?.includes('continuous')) {
-        await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-      }
+      if (capabilities.focusMode?.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
       setStatus('Focusing...');
       await new Promise(resolve => setTimeout(resolve, 800));
       setStatus('Scanning — point at barcode');
@@ -109,11 +93,8 @@ function BarcodeScanner({ onDetected, onClose }) {
           const results = await detector.detect(video);
           for (const result of results) {
             const val = result.rawValue;
-            if (validateBarcode(val)) {
-              detectedRef.current = true;
-              if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-              onDetected(val); return;
-            } else { setStatus('Bad read — hold steady...'); }
+            if (validateBarcode(val)) { detectedRef.current = true; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); onDetected(val); return; }
+            else setStatus('Bad read — hold steady...');
           }
         } catch (_) {}
         timerRef.current = setTimeout(scan, 300);
@@ -121,11 +102,7 @@ function BarcodeScanner({ onDetected, onClose }) {
       timerRef.current = setTimeout(scan, 300);
     }
     start();
-    return () => {
-      detectedRef.current = true;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    };
+    return () => { detectedRef.current = true; if (timerRef.current) clearTimeout(timerRef.current); if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
   }, [onDetected]);
 
   return (
@@ -198,7 +175,6 @@ async function lookupBarcode(barcode) {
   }
   return null;
 }
-
 async function lookupUSDABarcode(barcode) {
   const key = process.env.REACT_APP_USDA_API_KEY;
   const res = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${barcode}&dataType=Branded&pageSize=1&api_key=${key}`);
@@ -207,14 +183,12 @@ async function lookupUSDABarcode(barcode) {
   if (!food) return null;
   return buildFromUSDA(food);
 }
-
 export async function searchFoodUSDA(query) {
   const key = process.env.REACT_APP_USDA_API_KEY;
   const res = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Branded,SR%20Legacy&pageSize=10&api_key=${key}`);
   const json = await res.json();
   return (json.foods || []).map(f => buildFromUSDA(f));
 }
-
 function buildFromOFF(p) {
   const n = p.nutriments || {};
   const per100 = (f) => toNum(n[`${f}_100g`] ?? n[f] ?? 0);
@@ -232,7 +206,6 @@ function buildFromOFF(p) {
   if (!fat) fat = per100('fat') * ratio;
   return { description: p.product_name || 'Scanned product', calories: Math.round(calories), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), per100g: { calories: kcalPer100, protein: per100('proteins'), carbs: per100('carbohydrates'), fat: per100('fat') }, servingG, source: 'barcode' };
 }
-
 function buildFromUSDA(food) {
   const nutrients = food.foodNutrients || [];
   const get = (name) => toNum(nutrients.find(n => n.nutrientName === name)?.value ?? 0);
@@ -242,7 +215,6 @@ function buildFromUSDA(food) {
   const ratio = servingG / 100;
   return { description: food.description || 'USDA product', calories: Math.round(per100g.calories * ratio), protein: Math.round(per100g.protein * ratio), carbs: Math.round(per100g.carbs * ratio), fat: Math.round(per100g.fat * ratio), per100g, servingG, source: 'usda' };
 }
-
 function scaleToGrams(item, grams) {
   if (!item.per100g || !grams) return item;
   const ratio = grams / 100;
@@ -265,7 +237,6 @@ function SaveToLibraryModal({ item, libraryItems, userId, onSaved, onClose }) {
   };
 
   const inputStyle = { width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '8px 10px', boxSizing: 'border-box' };
-
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
       <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, width: '100%', maxWidth: 400 }}>
@@ -310,26 +281,24 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
     catch (e) { console.error(e); } finally { setSaving(false); }
   };
 
-  if (editing) {
-    return (
-      <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          <div style={{ flex: 2 }}>
-            <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Name</div>
-            <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 8px', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Unit</div>
-            <input value={editUnit} onChange={e => setEditUnit(e.target.value)} style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 8px', boxSizing: 'border-box' }} />
-          </div>
+  if (editing) return (
+    <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <div style={{ flex: 2 }}>
+          <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Name</div>
+          <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 8px', boxSizing: 'border-box' }} />
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button className="sync-btn" onClick={handleSaveEdit} disabled={saving || !editName.trim() || !editUnit.trim()} style={{ flex: 1, padding: '7px', fontSize: 12 }}>{saving ? '...' : 'Save'}</button>
-          <button onClick={() => { setEditing(false); setEditName(item.name); setEditUnit(item.unit); }} style={{ flex: 1, padding: '7px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>Cancel</button>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Unit</div>
+          <input value={editUnit} onChange={e => setEditUnit(e.target.value)} style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 8px', boxSizing: 'border-box' }} />
         </div>
       </div>
-    );
-  }
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button className="sync-btn" onClick={handleSaveEdit} disabled={saving || !editName.trim() || !editUnit.trim()} style={{ flex: 1, padding: '7px', fontSize: 12 }}>{saving ? '...' : 'Save'}</button>
+        <button onClick={() => { setEditing(false); setEditName(item.name); setEditUnit(item.unit); }} style={{ flex: 1, padding: '7px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>Cancel</button>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
@@ -353,8 +322,8 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
   );
 }
 
-// ── Saved Meal Row ────────────────────────────────────────────────────────────
-function SavedMealRow({ meal, onLog, onEdit, onDelete }) {
+// ── Saved Meal Row (with per-serving library save) ────────────────────────────
+function SavedMealRow({ meal, onLog, onEdit, onDelete, onSaveToLibrary }) {
   const [qty, setQty] = useState(1);
   const totalServings = meal.servings || 1;
   const perServing = {
@@ -379,7 +348,7 @@ function SavedMealRow({ meal, onLog, onEdit, onDelete }) {
           <button onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, padding: '4px 6px' }}>✕</button>
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
         {totalServings > 1 && (
           <>
             <div style={{ fontSize: 11, color: 'var(--text2)', flexShrink: 0 }}>Servings:</div>
@@ -390,6 +359,9 @@ function SavedMealRow({ meal, onLog, onEdit, onDelete }) {
         )}
         <button className="sync-btn" onClick={() => onLog(meal, qty)} style={{ flex: 1, padding: '6px 12px', fontSize: 12 }}>
           + Log {totalServings > 1 ? `${qty} serving${qty !== 1 ? 's' : ''}` : ''}
+        </button>
+        <button onClick={() => onSaveToLibrary(meal)} style={{ padding: '6px 10px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, flexShrink: 0 }}>
+          📚 Library
         </button>
       </div>
     </div>
@@ -422,69 +394,52 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   }), [ingredients]);
 
   const showMsg = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3000); };
-
-  const reloadLibrary = useCallback(async () => {
-    const items = await fetchFoodLibrary();
-    setLibraryItems(items); setLibraryLoaded(true);
-  }, []);
-
+  const reloadLibrary = useCallback(async () => { const items = await fetchFoodLibrary(); setLibraryItems(items); setLibraryLoaded(true); }, []);
   useEffect(() => { if (!libraryLoaded) reloadLibrary(); }, [libraryLoaded, reloadLibrary]);
 
   const addFromLibrary = (item, qty) => {
     const q = Math.max(0.25, toNum(qty) || 1);
     addIngredient({ description: `${item.name} (${q === 1 ? item.unit : `${q}x ${item.unit}`})`, calories: Math.round(item.calories * q), protein: Math.round(item.protein * q), carbs: Math.round(item.carbs * q), fat: Math.round(item.fat * q), source: 'library' });
   };
-
   const handleDeleteLibraryItem = async (itemId) => {
     try { await deleteFoodLibraryItem(itemId); setLibraryItems(prev => prev.filter(i => i.id !== itemId)); showMsg('success', 'Removed from library.'); }
     catch (e) { showMsg('error', e.message); }
   };
-
   const handleEditLibraryItem = async (itemId, { name, unit }) => {
     await updateFoodLibraryItem(itemId, { name, unit });
     setLibraryItems(prev => prev.map(i => i.id === itemId ? { ...i, name, unit } : i));
   };
-
   const addIngredient = (item) => {
     setIngredients(prev => [...prev, { ...item, id: Date.now() }]);
     setSearchResults([]); setSearchQuery('');
     showMsg('success', `Added ${item.description}`);
   };
-
   const removeIngredient = (id) => setIngredients(prev => prev.filter(i => i.id !== id));
-
   const updateGrams = (id, grams) => {
     setIngredients(prev => prev.map(i => {
       if (i.id !== id) return i;
       return i.per100g ? { ...scaleToGrams(i, toNum(grams)), id: i.id, servingG: toNum(grams) } : i;
     }));
   };
-
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true); setSearchResults([]);
     try { const results = await searchFoodUSDA(searchQuery); setSearchResults(results); if (results.length === 0) showMsg('error', 'No results found.'); }
-    catch (e) { showMsg('error', 'Search failed. Try again.'); }
-    finally { setSearching(false); }
+    catch (e) { showMsg('error', 'Search failed. Try again.'); } finally { setSearching(false); }
   };
-
   const handleBarcodeDetected = async (barcode) => {
     setScannerOpen(false); setBarcodeResult(null); setLookingUp(true);
     try {
       const [offResult, usdaResult] = await Promise.allSettled([lookupBarcode(barcode), lookupUSDABarcode(barcode)]);
       const result = (offResult.status === 'fulfilled' && offResult.value) ? offResult.value : (usdaResult.status === 'fulfilled' && usdaResult.value) ? usdaResult.value : null;
-      if (result) setBarcodeResult({ ...result, barcode });
-      else showMsg('error', 'Product not found.');
-    } catch (e) { showMsg('error', 'Barcode lookup failed.'); }
-    finally { setLookingUp(false); }
+      if (result) setBarcodeResult({ ...result, barcode }); else showMsg('error', 'Product not found.');
+    } catch (e) { showMsg('error', 'Barcode lookup failed.'); } finally { setLookingUp(false); }
   };
-
   const handleManualAdd = () => {
     if (!manualFields.description.trim() || !manualFields.calories) return;
     addIngredient({ description: manualFields.description.trim(), calories: toNum(manualFields.calories), protein: toNum(manualFields.protein), carbs: toNum(manualFields.carbs), fat: toNum(manualFields.fat), source: 'manual' });
     setManualFields({ description: '', calories: '', protein: '', carbs: '', fat: '' });
   };
-
   const handleLog = () => {
     if (ingredients.length === 0) return;
     const name = mealName.trim() || ingredients.map(i => i.description).join(', ');
@@ -505,7 +460,6 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
           onSaved={(savedName) => { setSaveLibraryModal(null); reloadLibrary(); showMsg('success', `"${savedName}" saved to library!`); }}
           onClose={() => setSaveLibraryModal(null)} />
       )}
-
       {ingredients.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 14, padding: 12, background: 'var(--bg3)', borderRadius: 'var(--radius)' }}>
           {[['Cal', totals.calories, 'var(--accent)'], ['Pro', `${Math.round(totals.protein)}g`, 'var(--green)'], ['Carb', `${Math.round(totals.carbs)}g`, 'var(--blue)'], ['Fat', `${Math.round(totals.fat)}g`, 'var(--text2)']].map(([l, v, c]) => (
@@ -516,9 +470,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
           ))}
         </div>
       )}
-
       {msg && <div className={`sync-banner ${msg.type}`} style={{ marginBottom: 10 }}>{msg.text}</div>}
-
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <SubBtn id="library" label="📚 Library" />
         <SubBtn id="search"  label="🔍 Search"  />
@@ -598,7 +550,15 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
               </div>
             ))}
           </div>
-          <button className="sync-btn" onClick={handleManualAdd} disabled={!manualFields.description.trim() || !manualFields.calories} style={{ width: '100%', padding: 12 }}>+ Add Ingredient</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="sync-btn" onClick={handleManualAdd} disabled={!manualFields.description.trim() || !manualFields.calories} style={{ flex: 1, padding: 12 }}>+ Add Ingredient</button>
+            <button
+              onClick={() => { if (!manualFields.description.trim() || !manualFields.calories) return; setSaveLibraryModal({ description: manualFields.description.trim(), calories: toNum(manualFields.calories), protein: toNum(manualFields.protein), carbs: toNum(manualFields.carbs), fat: toNum(manualFields.fat), servingG: null }); }}
+              disabled={!manualFields.description.trim() || !manualFields.calories}
+              style={{ padding: '12px 14px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}
+              title="Save to library"
+            >📚</button>
+          </div>
         </div>
       )}
 
@@ -617,6 +577,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
                   <span style={{ fontSize: 11, color: 'var(--text2)' }}>g</span>
                 </div>
               )}
+              <button onClick={() => setSaveLibraryModal({ ...ing, servingG: ing.servingG || null })} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, padding: '4px', flexShrink: 0 }} title="Save to library">📚</button>
               <button onClick={() => removeIngredient(ing.id)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, padding: '4px', flexShrink: 0 }}>✕</button>
             </div>
           ))}
@@ -640,22 +601,19 @@ export default function FoodLogTab({ data, userId }) {
 
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const isToday = selectedDate === todayStr();
-
   const goBack = () => setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), -1)));
   const goForward = () => { if (!isToday) setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), 1))); };
 
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [mode, setMode] = useState('build');
-
   const [textInput, setTextInput] = useState('');
   const [estimating, setEstimating] = useState(false);
-
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photoBlob, setPhotoBlob] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoCaption, setPhotoCaption] = useState('');
   const [analyzingPhoto, setAnalyzingPhoto] = useState(false);
-
   const [savedMeals, setSavedMeals] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
   const [savingMeal, setSavingMeal] = useState(false);
@@ -666,9 +624,13 @@ export default function FoodLogTab({ data, userId }) {
   const [editingMeal, setEditingMeal] = useState(null);
   const [editMealFields, setEditMealFields] = useState({});
 
+  // Library state for saved meals save-to-library
+  const [libraryItems, setLibraryItems] = useState([]);
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
+  const [saveToLibraryModal, setSaveToLibraryModal] = useState(null);
+
   const [editingEntry, setEditingEntry] = useState(null);
   const [editFields, setEditFields] = useState({});
-
   const [estimate, setEstimate] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -677,23 +639,24 @@ export default function FoodLogTab({ data, userId }) {
 
   const loadEntries = useCallback(async () => {
     setLoadingEntries(true);
-    try {
-      const all = await fetchFoodLog(userId);
-      setEntries(all.filter(e => e.date === selectedDate));
-    } catch (e) { console.error('Failed to load food log', e); }
-    finally { setLoadingEntries(false); }
+    try { const all = await fetchFoodLog(userId); setEntries(all.filter(e => e.date === selectedDate)); }
+    catch (e) { console.error('Failed to load food log', e); } finally { setLoadingEntries(false); }
   }, [userId, selectedDate]);
-
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
   const loadSavedMeals = useCallback(async () => {
     setLoadingSaved(true);
     try { setSavedMeals(await fetchSavedMeals(userId)); }
-    catch (e) { console.error('Failed to load saved meals', e); }
-    finally { setLoadingSaved(false); }
+    catch (e) { console.error('Failed to load saved meals', e); } finally { setLoadingSaved(false); }
   }, [userId]);
-
   useEffect(() => { if (mode === 'saved') loadSavedMeals(); }, [mode, loadSavedMeals]);
+
+  const loadLibraryItems = useCallback(async () => {
+    if (libraryLoaded) return;
+    try { setLibraryItems(await fetchFoodLibrary()); setLibraryLoaded(true); }
+    catch (e) { console.error('Failed to load library', e); }
+  }, [libraryLoaded]);
+  useEffect(() => { if (mode === 'saved') loadLibraryItems(); }, [mode, loadLibraryItems]);
 
   const totals = useMemo(() => ({
     calories: entries.reduce((s, e) => s + (e.calories || 0), 0),
@@ -709,12 +672,11 @@ export default function FoodLogTab({ data, userId }) {
     if (!textInput.trim()) return;
     setEstimating(true); setEstimate(null);
     try { const result = await estimateNutrition([{ role: 'user', content: textInput.trim() }]); setEstimate({ ...result, source: 'AI text' }); }
-    catch (e) { showMsg('error', 'AI estimate failed.'); }
-    finally { setEstimating(false); }
+    catch (e) { showMsg('error', 'AI estimate failed.'); } finally { setEstimating(false); }
   }, [textInput]);
 
   const handleCameraCapture = useCallback((blob) => {
-    setCameraOpen(false); setPhotoBlob(blob); setPhotoPreview(URL.createObjectURL(blob)); setEstimate(null);
+    setCameraOpen(false); setPhotoBlob(blob); setPhotoPreview(URL.createObjectURL(blob)); setEstimate(null); setPhotoCaption('');
   }, []);
 
   const handlePhotoEstimate = useCallback(async () => {
@@ -722,11 +684,16 @@ export default function FoodLogTab({ data, userId }) {
     setAnalyzingPhoto(true); setEstimate(null);
     try {
       const base64 = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result.split(',')[1]); r.onerror = reject; r.readAsDataURL(photoBlob); });
-      const result = await estimateNutrition([{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } }, { type: 'text', text: 'Estimate the calories and macros for the food shown in this photo.' }] }]);
+      const promptText = photoCaption.trim()
+        ? `Estimate the calories and macros for the food shown in this photo. Additional context: ${photoCaption.trim()}`
+        : 'Estimate the calories and macros for the food shown in this photo.';
+      const result = await estimateNutrition([{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+        { type: 'text', text: promptText },
+      ]}]);
       setEstimate({ ...result, source: 'photo' });
-    } catch (e) { showMsg('error', `Photo analysis failed: ${e.message}`); }
-    finally { setAnalyzingPhoto(false); }
-  }, [photoBlob]);
+    } catch (e) { showMsg('error', `Photo analysis failed: ${e.message}`); } finally { setAnalyzingPhoto(false); }
+  }, [photoBlob, photoCaption]);
 
   const handleSave = useCallback(async (override) => {
     const toSave = override || estimate;
@@ -734,21 +701,15 @@ export default function FoodLogTab({ data, userId }) {
     setSaving(true);
     try {
       await appendFoodEntry(userId, { date: selectedDate, time: nowTimeStr(), description: toSave.description, calories: toSave.calories, protein: toSave.protein, carbs: toSave.carbs, fat: toSave.fat, source: toSave.source || mode });
-      setEstimate(null); setTextInput(''); setPhotoBlob(null); setPhotoPreview(null);
-      showMsg('success', 'Logged!');
-      await loadEntries();
-    } catch (e) { showMsg('error', `Save failed: ${e.message}`); }
-    finally { setSaving(false); }
+      setEstimate(null); setTextInput(''); setPhotoBlob(null); setPhotoPreview(null); setPhotoCaption('');
+      showMsg('success', 'Logged!'); await loadEntries();
+    } catch (e) { showMsg('error', `Save failed: ${e.message}`); } finally { setSaving(false); }
   }, [estimate, userId, selectedDate, mode, loadEntries]);
 
   const handleBuilderLog = useCallback(async (meal) => {
     setSaving(true);
-    try {
-      await appendFoodEntry(userId, { date: selectedDate, time: nowTimeStr(), ...meal });
-      showMsg('success', 'Meal logged!');
-      await loadEntries();
-    } catch (e) { showMsg('error', `Save failed: ${e.message}`); }
-    finally { setSaving(false); }
+    try { await appendFoodEntry(userId, { date: selectedDate, time: nowTimeStr(), ...meal }); showMsg('success', 'Meal logged!'); await loadEntries(); }
+    catch (e) { showMsg('error', `Save failed: ${e.message}`); } finally { setSaving(false); }
   }, [userId, selectedDate, loadEntries]);
 
   const handleSaveRecipe = useCallback((meal) => {
@@ -762,8 +723,7 @@ export default function FoodLogTab({ data, userId }) {
       await saveMeal(userId, { name: saveMealName.trim(), calories: pendingSave.calories, protein: pendingSave.protein, carbs: pendingSave.carbs, fat: pendingSave.fat, servings: saveMealServings });
       setSaveModalOpen(false); setSaveMealName(''); setSaveMealServings(1); setPendingSave(null);
       showMsg('success', 'Recipe saved!');
-    } catch (e) { showMsg('error', `Failed to save: ${e.message}`); }
-    finally { setSavingMeal(false); }
+    } catch (e) { showMsg('error', `Failed to save: ${e.message}`); } finally { setSavingMeal(false); }
   }, [pendingSave, saveMealName, saveMealServings, userId]);
 
   const handleLogSavedMeal = useCallback(async (meal, qty) => {
@@ -773,11 +733,22 @@ export default function FoodLogTab({ data, userId }) {
     setSaving(true);
     try {
       await appendFoodEntry(userId, { date: selectedDate, time: nowTimeStr(), description, calories: Math.round(meal.calories * ratio), protein: Math.round(meal.protein * ratio), carbs: Math.round(meal.carbs * ratio), fat: Math.round(meal.fat * ratio), source: 'saved' });
-      showMsg('success', 'Logged!');
-      await loadEntries();
-    } catch (e) { showMsg('error', `Save failed: ${e.message}`); }
-    finally { setSaving(false); }
+      showMsg('success', 'Logged!'); await loadEntries();
+    } catch (e) { showMsg('error', `Save failed: ${e.message}`); } finally { setSaving(false); }
   }, [userId, selectedDate, loadEntries]);
+
+  // Save saved meal's per-serving macros to library
+  const handleSavedMealToLibrary = useCallback((meal) => {
+    const totalServings = meal.servings || 1;
+    setSaveToLibraryModal({
+      description: meal.name,
+      calories: Math.round(meal.calories / totalServings),
+      protein:  Math.round(meal.protein  / totalServings),
+      carbs:    Math.round(meal.carbs    / totalServings),
+      fat:      Math.round(meal.fat      / totalServings),
+      servingG: null,
+    });
+  }, []);
 
   const handleDelete = useCallback(async (entry) => {
     try { await deleteFoodEntry(entry.id); await loadEntries(); }
@@ -786,14 +757,7 @@ export default function FoodLogTab({ data, userId }) {
 
   const startEdit = (entry) => {
     setEditingEntry(entry.id);
-    setEditFields({
-      description: entry.description,
-      calories: entry.calories,
-      protein: entry.protein,
-      carbs: entry.carbs,
-      fat: entry.fat,
-      time: toInputTime(entry.time),
-    });
+    setEditFields({ description: entry.description, calories: entry.calories, protein: entry.protein, carbs: entry.carbs, fat: entry.fat, time: toInputTime(entry.time) });
   };
 
   const handleEditSave = useCallback(async () => {
@@ -802,21 +766,9 @@ export default function FoodLogTab({ data, userId }) {
     try {
       const orig = entries.find(e => e.id === editingEntry);
       await deleteFoodEntry(editingEntry);
-      await appendFoodEntry(userId, {
-        date: orig.date,
-        time: editFields.time || orig.time,
-        description: editFields.description,
-        calories: toNum(editFields.calories),
-        protein: toNum(editFields.protein),
-        carbs: toNum(editFields.carbs),
-        fat: toNum(editFields.fat),
-        source: orig.source || 'edit',
-      });
-      setEditingEntry(null);
-      showMsg('success', 'Updated!');
-      await loadEntries();
-    } catch (e) { showMsg('error', `Update failed: ${e.message}`); }
-    finally { setSaving(false); }
+      await appendFoodEntry(userId, { date: orig.date, time: editFields.time || orig.time, description: editFields.description, calories: toNum(editFields.calories), protein: toNum(editFields.protein), carbs: toNum(editFields.carbs), fat: toNum(editFields.fat), source: orig.source || 'edit' });
+      setEditingEntry(null); showMsg('success', 'Updated!'); await loadEntries();
+    } catch (e) { showMsg('error', `Update failed: ${e.message}`); } finally { setSaving(false); }
   }, [editingEntry, editFields, userId, entries, loadEntries]);
 
   const MacroPill = ({ label, value, color }) => (
@@ -825,21 +777,17 @@ export default function FoodLogTab({ data, userId }) {
       <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
     </div>
   );
-
   const ModeBtn = ({ id, icon, label }) => (
-    <button className={`nav-btn${mode === id ? ' active' : ''}`} onClick={() => { setMode(id); setEstimate(null); setCameraOpen(false); }} style={{ flex: 1, padding: '10px 4px', fontSize: 12 }}>
-      {icon} {label}
-    </button>
+    <button className={`nav-btn${mode === id ? ' active' : ''}`} onClick={() => { setMode(id); setEstimate(null); setCameraOpen(false); }} style={{ flex: 1, padding: '10px 4px', fontSize: 12 }}>{icon} {label}</button>
   );
-
   const EstimateCard = ({ est }) => (
     <div style={{ marginTop: 14, padding: 14, background: 'var(--bg3)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
       <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 15 }}>{est.description}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 14 }}>
-        <MacroPill label="Calories" value={est.calories}                   color="var(--accent)" />
-        <MacroPill label="Protein"  value={`${Math.round(est.protein)}g`}  color="var(--green)"  />
-        <MacroPill label="Carbs"    value={`${Math.round(est.carbs)}g`}    color="var(--blue)"   />
-        <MacroPill label="Fat"      value={`${Math.round(est.fat)}g`}      color="var(--text2)"  />
+        <MacroPill label="Calories" value={est.calories} color="var(--accent)" />
+        <MacroPill label="Protein"  value={`${Math.round(est.protein)}g`} color="var(--green)" />
+        <MacroPill label="Carbs"    value={`${Math.round(est.carbs)}g`} color="var(--blue)" />
+        <MacroPill label="Fat"      value={`${Math.round(est.fat)}g`} color="var(--text2)" />
       </div>
       <button className="sync-btn" onClick={() => handleSave(est)} disabled={saving} style={{ width: '100%', padding: 12, fontSize: 14 }}>{saving ? 'Saving...' : '+ Log This Meal'}</button>
       <button onClick={() => handleSaveRecipe(est)} style={{ width: '100%', marginTop: 8, padding: '10px', fontSize: 13, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer' }}>Save as Meal</button>
@@ -852,22 +800,25 @@ export default function FoodLogTab({ data, userId }) {
 
   return (
     <>
+      {saveToLibraryModal && (
+        <SaveToLibraryModal
+          item={saveToLibraryModal}
+          libraryItems={libraryItems}
+          userId={userId}
+          onSaved={(savedName) => { setSaveToLibraryModal(null); setLibraryLoaded(false); showMsg('success', `"${savedName}" saved to library!`); }}
+          onClose={() => setSaveToLibraryModal(null)}
+        />
+      )}
+
       <div className="section-header" style={{ marginBottom: 12 }}>
         <span className="section-title">FOOD LOG</span>
       </div>
 
-      {/* ── Date Navigation ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '10px 16px', marginBottom: 20 }}>
         <button onClick={goBack} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 22, cursor: 'pointer', padding: '0 8px', lineHeight: 1 }}>‹</button>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: isToday ? 'var(--accent)' : 'var(--text)', letterSpacing: '0.05em' }}>
-            {formatDisplayDate(selectedDate)}
-          </div>
-          {!isToday && (
-            <button onClick={() => setSelectedDate(todayStr())} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 11, cursor: 'pointer', padding: '2px 0', textDecoration: 'underline' }}>
-              back to today
-            </button>
-          )}
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: isToday ? 'var(--accent)' : 'var(--text)', letterSpacing: '0.05em' }}>{formatDisplayDate(selectedDate)}</div>
+          {!isToday && <button onClick={() => setSelectedDate(todayStr())} style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: 11, cursor: 'pointer', padding: '2px 0', textDecoration: 'underline' }}>back to today</button>}
         </div>
         <button onClick={goForward} disabled={isToday} style={{ background: 'none', border: 'none', color: isToday ? 'var(--border)' : 'var(--accent)', fontSize: 22, cursor: isToday ? 'default' : 'pointer', padding: '0 8px', lineHeight: 1 }}>›</button>
       </div>
@@ -923,9 +874,16 @@ export default function FoodLogTab({ data, userId }) {
             ) : photoPreview ? (
               <>
                 <img src={photoPreview} alt="Food" style={{ width: '100%', borderRadius: 'var(--radius)', marginBottom: 10, maxHeight: 240, objectFit: 'cover' }} />
+                <textarea
+                  value={photoCaption}
+                  onChange={e => setPhotoCaption(e.target.value)}
+                  placeholder="Optional: describe what's in the photo for better accuracy (e.g. 'grilled chicken breast with rice, about 6oz chicken')"
+                  rows={2}
+                  style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-body)', padding: '10px 12px', resize: 'none', boxSizing: 'border-box', marginBottom: 8 }}
+                />
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="sync-btn" onClick={handlePhotoEstimate} disabled={analyzingPhoto} style={{ flex: 1, padding: 12, fontSize: 14 }}>{analyzingPhoto ? 'Analyzing...' : '🤖 Analyze Photo'}</button>
-                  <button className="logout-btn" onClick={() => { setPhotoBlob(null); setPhotoPreview(null); setEstimate(null); }} style={{ padding: '12px 16px' }}>Retake</button>
+                  <button className="logout-btn" onClick={() => { setPhotoBlob(null); setPhotoPreview(null); setEstimate(null); setPhotoCaption(''); }} style={{ padding: '12px 16px' }}>Retake</button>
                 </div>
                 {estimate && <EstimateCard est={estimate} />}
               </>
@@ -972,6 +930,7 @@ export default function FoodLogTab({ data, userId }) {
                   <SavedMealRow
                     meal={meal}
                     onLog={handleLogSavedMeal}
+                    onSaveToLibrary={handleSavedMealToLibrary}
                     onEdit={() => { setEditingMeal(meal.id); setEditMealFields({ name: meal.name, calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, servings: meal.servings || 1 }); }}
                     onDelete={() => { deleteSavedMeal(meal.id); setSavedMeals(prev => prev.filter(m => m.id !== meal.id)); }}
                   />
@@ -1014,29 +973,16 @@ export default function FoodLogTab({ data, userId }) {
           <div key={e.id}>
             {editingEntry === e.id ? (
               <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)' }}>
-                {/* Time field */}
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Time eaten</div>
-                  <input
-                    type="time"
-                    value={editFields.time}
-                    onChange={ev => setEditFields(f => ({ ...f, time: ev.target.value }))}
-                    style={{ ...editInputBase, border: '1px solid var(--accent)', fontSize: 13, padding: '6px 10px' }}
-                  />
+                  <input type="time" value={editFields.time} onChange={ev => setEditFields(f => ({ ...f, time: ev.target.value }))} style={{ ...editInputBase, border: '1px solid var(--accent)', fontSize: 13, padding: '6px 10px' }} />
                 </div>
-                {/* Description field */}
-                <input
-                  value={editFields.description}
-                  onChange={ev => setEditFields(f => ({ ...f, description: ev.target.value }))}
-                  style={{ ...editInputBase, border: '1px solid var(--accent)', fontSize: 13, padding: '6px 10px', marginBottom: 8 }}
-                />
-                {/* Macro fields */}
+                <input value={editFields.description} onChange={ev => setEditFields(f => ({ ...f, description: ev.target.value }))} style={{ ...editInputBase, border: '1px solid var(--accent)', fontSize: 13, padding: '6px 10px', marginBottom: 8 }} />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginBottom: 8 }}>
                   {[['calories','Cal'],['protein','Pro'],['carbs','Carb'],['fat','Fat']].map(([k, label]) => (
                     <div key={k}>
                       <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
-                      <input type="number" value={editFields[k]} onChange={ev => setEditFields(f => ({ ...f, [k]: ev.target.value }))}
-                        style={{ ...editInputBase, fontFamily: 'var(--font-mono)', textAlign: 'right' }} />
+                      <input type="number" value={editFields[k]} onChange={ev => setEditFields(f => ({ ...f, [k]: ev.target.value }))} style={{ ...editInputBase, fontFamily: 'var(--font-mono)', textAlign: 'right' }} />
                     </div>
                   ))}
                 </div>
