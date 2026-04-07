@@ -7,6 +7,7 @@ import {
 } from '../api/supabase';
 import { supabase } from '../lib/supabase';
 
+// ── Date/time helpers ─────────────────────────────────────────────────────────
 function dateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -20,8 +21,7 @@ function formatDisplayDate(ds) {
   if (ds === todayStr()) return 'Today';
   if (ds === dateStr(offsetDate(new Date(), -1))) return 'Yesterday';
   const [y, m, d] = ds.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 function nowTimeStr() {
   const d = new Date();
@@ -31,9 +31,7 @@ function displayTime(t) {
   if (!t) return '';
   if (t.includes('AM') || t.includes('PM')) return t;
   const [h, m] = t.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour = h % 12 || 12;
-  return `${hour}:${String(m).padStart(2,'0')} ${ampm}`;
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 function toInputTime(t) {
   if (!t) return nowTimeStr();
@@ -41,11 +39,10 @@ function toInputTime(t) {
   const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
   if (!match) return nowTimeStr();
   let h = parseInt(match[1]);
-  const m = match[2];
   const ampm = match[3].toUpperCase();
   if (ampm === 'PM' && h !== 12) h += 12;
   if (ampm === 'AM' && h === 12) h = 0;
-  return `${String(h).padStart(2,'0')}:${m}`;
+  return `${String(h).padStart(2,'0')}:${match[2]}`;
 }
 function toNum(v) { return parseFloat(v) || 0; }
 
@@ -62,109 +59,7 @@ function validateBarcode(barcode) {
   return (10 - (sum % 10)) % 10 === check;
 }
 
-// ── Barcode Scanner ───────────────────────────────────────────────────────────
-function BarcodeScanner({ onDetected, onClose }) {
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const timerRef = useRef(null);
-  const detectedRef = useRef(false);
-  const [status, setStatus] = useState('Starting camera...');
-
-  useEffect(() => {
-    async function start() {
-      if (!('BarcodeDetector' in window)) { setStatus('Barcode scanning not supported on this browser.'); return; }
-      let stream;
-      try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } }); }
-      catch (e) { setStatus(`Camera error: ${e.message}`); return; }
-      streamRef.current = stream;
-      const video = videoRef.current;
-      video.srcObject = stream;
-      await video.play();
-      const track = stream.getVideoTracks()[0];
-      const capabilities = track.getCapabilities();
-      if (capabilities.focusMode?.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-      setStatus('Focusing...');
-      await new Promise(resolve => setTimeout(resolve, 800));
-      setStatus('Scanning — point at barcode');
-      const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'] });
-      async function scan() {
-        if (detectedRef.current) return;
-        try {
-          const results = await detector.detect(video);
-          for (const result of results) {
-            const val = result.rawValue;
-            if (validateBarcode(val)) { detectedRef.current = true; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); onDetected(val); return; }
-            else setStatus('Bad read — hold steady...');
-          }
-        } catch (_) {}
-        timerRef.current = setTimeout(scan, 300);
-      }
-      timerRef.current = setTimeout(scan, 300);
-    }
-    start();
-    return () => { detectedRef.current = true; if (timerRef.current) clearTimeout(timerRef.current); if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
-  }, [onDetected]);
-
-  return (
-    <div style={{ position: 'relative', background: '#000', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 12 }}>
-      <video ref={videoRef} style={{ width: '100%', display: 'block', maxHeight: 240, objectFit: 'cover' }} muted playsInline />
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-        <div style={{ width: '70%', height: 70, border: '2px solid var(--accent)', borderRadius: 6, boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)' }} />
-      </div>
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: 'var(--accent)', fontSize: 12, textAlign: 'center', padding: '6px 12px', fontFamily: 'var(--font-mono)' }}>{status}</div>
-      <button onClick={onClose} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: 16 }}>✕</button>
-    </div>
-  );
-}
-
-// ── In-App Camera Capture ─────────────────────────────────────────────────────
-function FoodCamera({ onCapture, onClose }) {
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    async function start() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
-        streamRef.current = stream;
-        const video = videoRef.current;
-        video.srcObject = stream;
-        await video.play();
-        setReady(true);
-      } catch (e) { setError(`Camera error: ${e.message}`); }
-    }
-    start();
-    return () => { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
-  }, []);
-
-  const handleCapture = () => {
-    const video = videoRef.current;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    canvas.toBlob(blob => { if (blob) onCapture(blob); }, 'image/jpeg', 0.85);
-  };
-
-  return (
-    <div style={{ position: 'relative', background: '#000', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 12 }}>
-      <video ref={videoRef} style={{ width: '100%', display: 'block', maxHeight: 300, objectFit: 'cover' }} muted playsInline />
-      {error && <div style={{ padding: 20, color: 'var(--red)', fontSize: 13, textAlign: 'center' }}>{error}</div>}
-      {!error && (
-        <div style={{ position: 'absolute', bottom: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 16, alignItems: 'center' }}>
-          <button onClick={onClose} style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-          <button onClick={handleCapture} disabled={!ready} style={{ background: ready ? 'var(--accent)' : '#555', border: 'none', color: '#000', borderRadius: '50%', width: 56, height: 56, cursor: ready ? 'pointer' : 'default', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>●</button>
-          <div style={{ width: 80 }} />
-        </div>
-      )}
-      {!ready && !error && <div style={{ position: 'absolute', top: 8, left: 0, right: 0, textAlign: 'center', color: 'var(--accent)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>Starting camera...</div>}
-    </div>
-  );
-}
-
-// ── Nutrition lookup helpers ───────────────────────────────────────────────────
+// ── Nutrition lookup helpers ──────────────────────────────────────────────────
 async function lookupBarcode(barcode) {
   const candidates = [barcode];
   if (barcode.length === 12) candidates.push('0' + barcode);
@@ -189,51 +84,221 @@ export async function searchFoodUSDA(query) {
   const json = await res.json();
   return (json.foods || []).map(f => buildFromUSDA(f));
 }
+
 function buildFromOFF(p) {
   const n = p.nutriments || {};
   const per100 = (f) => toNum(n[`${f}_100g`] ?? n[f] ?? 0);
   let kcalPer100 = per100('energy-kcal');
-  if (!kcalPer100 || kcalPer100 > 900) { const kj = per100('energy-kj') || per100('energy'); kcalPer100 = kj / 4.184; }
+  if (!kcalPer100 || kcalPer100 > 900) {
+    const kj = per100('energy-kj') || per100('energy');
+    kcalPer100 = kj / 4.184;
+  }
   const perServing = (f) => toNum(n[`${f}_serving`] ?? 0);
   const servingRaw = p.serving_size || '';
-  const match = servingRaw.match(/(\d+(\.\d+)?)\s*g/i);
-  const servingG = match ? parseFloat(match[1]) : toNum(p.serving_quantity) || 100;
+  const gramMatch = servingRaw.match(/(\d+(\.\d+)?)\s*g/i);
+  const servingG = gramMatch ? parseFloat(gramMatch[1]) : toNum(p.serving_quantity) || 100;
   const ratio = servingG / 100;
-  let calories = perServing('energy-kcal'); let protein = perServing('proteins'); let carbs = perServing('carbohydrates'); let fat = perServing('fat');
+
+  let calories = perServing('energy-kcal');
+  let protein  = perServing('proteins');
+  let carbs    = perServing('carbohydrates');
+  let fat      = perServing('fat');
   if (!calories || calories > 1200) calories = kcalPer100 * ratio;
-  if (!protein) protein = per100('proteins') * ratio;
-  if (!carbs) carbs = per100('carbohydrates') * ratio;
-  if (!fat) fat = per100('fat') * ratio;
-  return { description: p.product_name || 'Scanned product', calories: Math.round(calories), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), per100g: { calories: kcalPer100, protein: per100('proteins'), carbs: per100('carbohydrates'), fat: per100('fat') }, servingG, source: 'barcode' };
+  if (!protein)  protein  = per100('proteins') * ratio;
+  if (!carbs)    carbs    = per100('carbohydrates') * ratio;
+  if (!fat)      fat      = per100('fat') * ratio;
+
+  // Extract a human-readable serving label (e.g. "1/2 cup" from "1/2 cup (113g)")
+  const servingDescription = servingRaw.replace(/\s*\(\s*\d+(\.\d+)?\s*g\s*\)/i, '').trim() || null;
+
+  return {
+    description: p.product_name || 'Scanned product',
+    calories: Math.round(calories), protein: Math.round(protein),
+    carbs: Math.round(carbs), fat: Math.round(fat),
+    per100g: { calories: kcalPer100, protein: per100('proteins'), carbs: per100('carbohydrates'), fat: per100('fat') },
+    servingG, servingDescription, source: 'barcode',
+  };
 }
+
 function buildFromUSDA(food) {
   const nutrients = food.foodNutrients || [];
   const get = (name) => toNum(nutrients.find(n => n.nutrientName === name)?.value ?? 0);
   const kcalPer100 = get('Energy');
-  const per100g = { calories: kcalPer100, protein: get('Protein'), carbs: get('Carbohydrate, by difference'), fat: get('Total lipid (fat)') };
+  const per100g = {
+    calories: kcalPer100,
+    protein:  get('Protein'),
+    carbs:    get('Carbohydrate, by difference'),
+    fat:      get('Total lipid (fat)'),
+  };
   const servingG = toNum(food.servingSize) || 100;
   const ratio = servingG / 100;
-  return { description: food.description || 'USDA product', calories: Math.round(per100g.calories * ratio), protein: Math.round(per100g.protein * ratio), carbs: Math.round(per100g.carbs * ratio), fat: Math.round(per100g.fat * ratio), per100g, servingG, source: 'usda' };
+
+  // Only use the unit label when it isn't just "g"
+  const rawUnit = food.servingSizeUnit || '';
+  const servingDescription = rawUnit && rawUnit.toLowerCase() !== 'g'
+    ? `${food.servingSize} ${rawUnit}`
+    : null;
+
+  return {
+    description: food.description || 'USDA product',
+    calories: Math.round(per100g.calories * ratio), protein: Math.round(per100g.protein * ratio),
+    carbs: Math.round(per100g.carbs * ratio), fat: Math.round(per100g.fat * ratio),
+    per100g, servingG, servingDescription, source: 'usda',
+  };
 }
+
 function scaleToGrams(item, grams) {
   if (!item.per100g || !grams) return item;
   const ratio = grams / 100;
-  return { ...item, calories: Math.round(item.per100g.calories * ratio), protein: Math.round(item.per100g.protein * ratio), carbs: Math.round(item.per100g.carbs * ratio), fat: Math.round(item.per100g.fat * ratio), servingG: grams };
+  return {
+    ...item,
+    calories: Math.round(item.per100g.calories * ratio),
+    protein:  Math.round(item.per100g.protein  * ratio),
+    carbs:    Math.round(item.per100g.carbs    * ratio),
+    fat:      Math.round(item.per100g.fat      * ratio),
+    servingG: grams,
+  };
+}
+
+// Returns the best default unit string for a food item
+function defaultUnit(item) {
+  if (item.servingDescription) return item.servingDescription;
+  if (item.servingG)           return `${item.servingG}g`;
+  return '1 serving';
+}
+
+// ── Barcode Scanner ───────────────────────────────────────────────────────────
+function BarcodeScanner({ onDetected, onClose }) {
+  const videoRef    = useRef(null);
+  const streamRef   = useRef(null);
+  const timerRef    = useRef(null);
+  const detectedRef = useRef(false);
+  const [status, setStatus] = useState('Starting camera...');
+
+  useEffect(() => {
+    async function start() {
+      if (!('BarcodeDetector' in window)) { setStatus('Barcode scanning not supported on this browser.'); return; }
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } });
+      } catch (e) { setStatus(`Camera error: ${e.message}`); return; }
+      streamRef.current = stream;
+      const video = videoRef.current;
+      video.srcObject = stream;
+      await video.play();
+      const track = stream.getVideoTracks()[0];
+      const capabilities = track.getCapabilities();
+      if (capabilities.focusMode?.includes('continuous')) {
+        await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      }
+      setStatus('Focusing...');
+      await new Promise(r => setTimeout(r, 800));
+      setStatus('Scanning — point at barcode');
+      const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'] });
+      async function scan() {
+        if (detectedRef.current) return;
+        try {
+          const results = await detector.detect(video);
+          for (const result of results) {
+            const val = result.rawValue;
+            if (validateBarcode(val)) {
+              detectedRef.current = true;
+              if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+              onDetected(val); return;
+            } else { setStatus('Bad read — hold steady...'); }
+          }
+        } catch (_) {}
+        timerRef.current = setTimeout(scan, 300);
+      }
+      timerRef.current = setTimeout(scan, 300);
+    }
+    start();
+    return () => {
+      detectedRef.current = true;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    };
+  }, [onDetected]);
+
+  return (
+    <div style={{ position: 'relative', background: '#000', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 12 }}>
+      <video ref={videoRef} style={{ width: '100%', display: 'block', maxHeight: 240, objectFit: 'cover' }} muted playsInline />
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+        <div style={{ width: '70%', height: 70, border: '2px solid var(--accent)', borderRadius: 6, boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)' }} />
+      </div>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: 'var(--accent)', fontSize: 12, textAlign: 'center', padding: '6px 12px', fontFamily: 'var(--font-mono)' }}>{status}</div>
+      <button onClick={onClose} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: 16 }}>✕</button>
+    </div>
+  );
+}
+
+// ── In-App Camera Capture ─────────────────────────────────────────────────────
+function FoodCamera({ onCapture, onClose }) {
+  const videoRef  = useRef(null);
+  const streamRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function start() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        streamRef.current = stream;
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setReady(true);
+      } catch (e) { setError(`Camera error: ${e.message}`); }
+    }
+    start();
+    return () => { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
+  }, []);
+
+  const handleCapture = () => {
+    const video  = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    canvas.toBlob(blob => { if (blob) onCapture(blob); }, 'image/jpeg', 0.85);
+  };
+
+  return (
+    <div style={{ position: 'relative', background: '#000', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 12 }}>
+      <video ref={videoRef} style={{ width: '100%', display: 'block', maxHeight: 300, objectFit: 'cover' }} muted playsInline />
+      {error && <div style={{ padding: 20, color: 'var(--red)', fontSize: 13, textAlign: 'center' }}>{error}</div>}
+      {!error && (
+        <div style={{ position: 'absolute', bottom: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 16, alignItems: 'center' }}>
+          <button onClick={onClose} style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+          <button onClick={handleCapture} disabled={!ready} style={{ background: ready ? 'var(--accent)' : '#555', border: 'none', color: '#000', borderRadius: '50%', width: 56, height: 56, cursor: ready ? 'pointer' : 'default', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>●</button>
+          <div style={{ width: 80 }} />
+        </div>
+      )}
+      {!ready && !error && <div style={{ position: 'absolute', top: 8, left: 0, right: 0, textAlign: 'center', color: 'var(--accent)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>Starting camera...</div>}
+    </div>
+  );
 }
 
 // ── Save to Library Modal ─────────────────────────────────────────────────────
 function SaveToLibraryModal({ item, libraryItems, userId, onSaved, onClose }) {
-  const [name, setName] = useState(item.description?.split(',')[0].trim() || '');
-  const [unit, setUnit] = useState(item.servingG ? `${item.servingG}g` : '1 serving');
+  const [name, setName]   = useState(item.description?.split(',')[0].trim() || '');
+  const [unit, setUnit]   = useState(defaultUnit(item));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError]   = useState(null);
   const duplicate = item.barcode ? libraryItems.find(i => i.barcode === item.barcode) : null;
 
   const handleSave = async () => {
     if (!name.trim() || !unit.trim()) return;
     setSaving(true); setError(null);
-    try { await saveFoodLibraryItem(userId, { name: name.trim(), unit: unit.trim(), calories: item.calories, protein: item.protein, carbs: item.carbs, fat: item.fat, barcode: item.barcode || null }); onSaved(name.trim()); }
-    catch (e) { setError(e.message); } finally { setSaving(false); }
+    try {
+      await saveFoodLibraryItem(userId, {
+        name: name.trim(), unit: unit.trim(),
+        calories: item.calories, protein: item.protein, carbs: item.carbs, fat: item.fat,
+        barcode: item.barcode || null,
+      });
+      onSaved(name.trim());
+    } catch (e) { setError(e.message); } finally { setSaving(false); }
   };
 
   const inputStyle = { width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '8px 10px', boxSizing: 'border-box' };
@@ -245,17 +310,26 @@ function SaveToLibraryModal({ item, libraryItems, userId, onSaved, onClose }) {
           {item.calories} cal · P:{item.protein}g · C:{item.carbs}g · F:{item.fat}g
           {item.barcode && <span style={{ marginLeft: 6, color: 'var(--text3)' }}>· #{item.barcode}</span>}
         </div>
-        {duplicate && <div style={{ padding: '10px 12px', background: 'rgba(255,160,0,0.1)', border: '1px solid rgba(255,160,0,0.4)', borderRadius: 4, marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>This barcode already exists as <strong>{duplicate.name}</strong>. Saving again will create a duplicate.</div>}
+        {duplicate && (
+          <div style={{ padding: '10px 12px', background: 'rgba(255,160,0,0.1)', border: '1px solid rgba(255,160,0,0.4)', borderRadius: 4, marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>
+            This barcode already exists as <strong>{duplicate.name}</strong>. Saving again will create a duplicate.
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <div style={{ flex: 2 }}>
             <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Name</div>
             <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} autoFocus placeholder="e.g. Greek Yogurt" />
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Unit</div>
-            <input value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle} placeholder="e.g. 100g" />
+            <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Unit / Serving</div>
+            <input value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle} placeholder="e.g. 1/2 cup" />
           </div>
         </div>
+        {item.servingG && item.servingDescription && (
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 12 }}>
+            {item.servingDescription} = {item.servingG}g
+          </div>
+        )}
         {error && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="sync-btn" onClick={handleSave} disabled={saving || !name.trim() || !unit.trim()} style={{ flex: 1, padding: 10 }}>{saving ? '...' : 'Save to Library'}</button>
@@ -268,11 +342,11 @@ function SaveToLibraryModal({ item, libraryItems, userId, onSaved, onClose }) {
 
 // ── Library Item Row ──────────────────────────────────────────────────────────
 function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
-  const [qty, setQty] = useState(1);
+  const [qty, setQty]         = useState(1);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(item.name);
   const [editUnit, setEditUnit] = useState(item.unit);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]   = useState(false);
 
   const handleSaveEdit = async () => {
     if (!editName.trim() || !editUnit.trim()) return;
@@ -280,6 +354,11 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
     try { await onEdit(item.id, { name: editName.trim(), unit: editUnit.trim() }); setEditing(false); }
     catch (e) { console.error(e); } finally { setSaving(false); }
   };
+
+  // Determine gram equivalent for non-gram units (informational only)
+  const gramMatch = item.unit.match(/^(\d+(\.\d+)?)\s*g$/i);
+  const isGramUnit = !!gramMatch;
+  const unitGrams  = isGramUnit ? parseFloat(gramMatch[1]) : null;
 
   if (editing) return (
     <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
@@ -289,7 +368,7 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
           <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 8px', boxSizing: 'border-box' }} />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Unit</div>
+          <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 3 }}>Unit / Serving</div>
           <input value={editUnit} onChange={e => setEditUnit(e.target.value)} style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 13, padding: '6px 8px', boxSizing: 'border-box' }} />
         </div>
       </div>
@@ -306,8 +385,9 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
         <div style={{ fontSize: 13, fontWeight: 500 }}>{item.name}</div>
         <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
           <span style={{ color: 'var(--accent)' }}>{Math.round(item.calories * qty)} cal</span>
-          {' · '}P:{Math.round(item.protein * qty)}g · C:{Math.round(item.carbs * qty)}g · F:{Math.round(item.fat * qty)}g · per {item.unit} × {qty}
-          {(() => { const match = item.unit.match(/(\d+(\.\d+)?)\s*g/i); const unitGrams = match ? parseFloat(match[1]) : null; const totalGrams = unitGrams ? Math.round(unitGrams * qty * 10) / 10 : null; return totalGrams && qty !== 1 ? ` (${totalGrams}g)` : ''; })()}
+          {' · '}P:{Math.round(item.protein * qty)}g · C:{Math.round(item.carbs * qty)}g · F:{Math.round(item.fat * qty)}g
+          {' · '}{qty === 1 ? item.unit : `${qty} × ${item.unit}`}
+          {isGramUnit && qty !== 1 && ` (${Math.round(unitGrams * qty * 10) / 10}g)`}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -322,7 +402,51 @@ function LibraryItemRow({ item, onAdd, onDelete, onEdit }) {
   );
 }
 
-// ── Saved Meal Row (with per-serving library save) ────────────────────────────
+// ── Search Result Row ─────────────────────────────────────────────────────────
+function SearchResultRow({ result, onAdd, onSaveToLibrary }) {
+  const serving = result.servingDescription || `${result.servingG}g`;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{result.description}</div>
+        <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ color: 'var(--accent)' }}>{result.calories} cal</span>
+          {' · '}P:{result.protein}g · C:{result.carbs}g · F:{result.fat}g · per {serving}
+          {result.servingDescription && result.servingG && (
+            <span style={{ color: 'var(--text3)' }}> ({result.servingG}g)</span>
+          )}
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0, marginLeft: 8 }}>
+        <button className="sync-btn" onClick={() => onAdd(result)} style={{ padding: '6px 12px', fontSize: 12 }}>+ Add</button>
+        <button onClick={() => onSaveToLibrary(result)} style={{ padding: '4px 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text3)', cursor: 'pointer', fontSize: 10 }}>📚 Save</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Barcode Result Card ───────────────────────────────────────────────────────
+function BarcodeResultCard({ result, onAdd, onSaveToLibrary }) {
+  const serving = result.servingDescription || `${result.servingG}g`;
+  return (
+    <div style={{ padding: 12, background: 'var(--bg3)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{result.description}</div>
+      <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', marginBottom: 10 }}>
+        <span style={{ color: 'var(--accent)' }}>{result.calories} cal</span>
+        {' · '}P:{result.protein}g · C:{result.carbs}g · F:{result.fat}g · per {serving}
+        {result.servingDescription && result.servingG && (
+          <span style={{ color: 'var(--text3)' }}> ({result.servingG}g)</span>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="sync-btn" onClick={onAdd} style={{ flex: 1, padding: 10, fontSize: 13 }}>+ Add</button>
+        <button onClick={onSaveToLibrary} style={{ flex: 1, padding: 10, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>📚 Save to Library</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Saved Meal Row ────────────────────────────────────────────────────────────
 function SavedMealRow({ meal, onLog, onEdit, onDelete, onSaveToLibrary }) {
   const [qty, setQty] = useState(1);
   const totalServings = meal.servings || 1;
@@ -339,12 +463,17 @@ function SavedMealRow({ meal, onLog, onEdit, onDelete, onSaveToLibrary }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{meal.name}</div>
           <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-            <span style={{ color: 'var(--accent)' }}>{perServing.calories} cal</span>{' · '}P:{perServing.protein}g · C:{perServing.carbs}g · F:{perServing.fat}g
+            <span style={{ color: 'var(--accent)' }}>{perServing.calories} cal</span>
+            {' · '}P:{perServing.protein}g · C:{perServing.carbs}g · F:{perServing.fat}g
           </div>
-          {totalServings > 1 && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{qty} of {totalServings} servings · {Math.round(meal.calories / totalServings)} cal each</div>}
+          {totalServings > 1 && (
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+              {qty} of {totalServings} servings · {Math.round(meal.calories / totalServings)} cal each
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <button onClick={onEdit} style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✏️</button>
+          <button onClick={onEdit}   style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✏️</button>
           <button onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, padding: '4px 6px' }}>✕</button>
         </div>
       </div>
@@ -370,20 +499,20 @@ function SavedMealRow({ meal, onLog, onEdit, onDelete, onSaveToLibrary }) {
 
 // ── Meal Builder ──────────────────────────────────────────────────────────────
 function MealBuilder({ userId, onLog, onSaveRecipe }) {
-  const [ingredients, setIngredients] = useState([]);
-  const [mealName, setMealName] = useState('');
-  const [subMode, setSubMode] = useState('library');
+  const [ingredients, setIngredients]   = useState([]);
+  const [mealName, setMealName]         = useState('');
+  const [subMode, setSubMode]           = useState('library');
   const [libraryItems, setLibraryItems] = useState([]);
   const [libraryLoaded, setLibraryLoaded] = useState(false);
   const [librarySearch, setLibrarySearch] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [lookingUp, setLookingUp] = useState(false);
+  const [searching, setSearching]       = useState(false);
+  const [scannerOpen, setScannerOpen]   = useState(false);
+  const [lookingUp, setLookingUp]       = useState(false);
   const [barcodeResult, setBarcodeResult] = useState(null);
   const [saveLibraryModal, setSaveLibraryModal] = useState(null);
-  const [msg, setMsg] = useState(null);
+  const [msg, setMsg]                   = useState(null);
   const [manualFields, setManualFields] = useState({ description: '', calories: '', protein: '', carbs: '', fat: '' });
 
   const totals = useMemo(() => ({
@@ -394,52 +523,85 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   }), [ingredients]);
 
   const showMsg = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3000); };
-  const reloadLibrary = useCallback(async () => { const items = await fetchFoodLibrary(); setLibraryItems(items); setLibraryLoaded(true); }, []);
+
+  const reloadLibrary = useCallback(async () => {
+    const items = await fetchFoodLibrary();
+    setLibraryItems(items); setLibraryLoaded(true);
+  }, []);
   useEffect(() => { if (!libraryLoaded) reloadLibrary(); }, [libraryLoaded, reloadLibrary]);
 
-  const addFromLibrary = (item, qty) => {
-    const q = Math.max(0.25, toNum(qty) || 1);
-    addIngredient({ description: `${item.name} (${q === 1 ? item.unit : `${q}x ${item.unit}`})`, calories: Math.round(item.calories * q), protein: Math.round(item.protein * q), carbs: Math.round(item.carbs * q), fat: Math.round(item.fat * q), source: 'library' });
-  };
-  const handleDeleteLibraryItem = async (itemId) => {
-    try { await deleteFoodLibraryItem(itemId); setLibraryItems(prev => prev.filter(i => i.id !== itemId)); showMsg('success', 'Removed from library.'); }
-    catch (e) { showMsg('error', e.message); }
-  };
-  const handleEditLibraryItem = async (itemId, { name, unit }) => {
-    await updateFoodLibraryItem(itemId, { name, unit });
-    setLibraryItems(prev => prev.map(i => i.id === itemId ? { ...i, name, unit } : i));
-  };
   const addIngredient = (item) => {
     setIngredients(prev => [...prev, { ...item, id: Date.now() }]);
     setSearchResults([]); setSearchQuery('');
     showMsg('success', `Added ${item.description}`);
   };
+
+  const addFromLibrary = (item, qty) => {
+    const q = Math.max(0.25, toNum(qty) || 1);
+    const label = q === 1 ? item.unit : `${q} × ${item.unit}`;
+    addIngredient({
+      description: `${item.name} (${label})`,
+      calories: Math.round(item.calories * q),
+      protein:  Math.round(item.protein  * q),
+      carbs:    Math.round(item.carbs    * q),
+      fat:      Math.round(item.fat      * q),
+      source: 'library',
+    });
+  };
+
+  const handleDeleteLibraryItem = async (itemId) => {
+    try { await deleteFoodLibraryItem(itemId); setLibraryItems(prev => prev.filter(i => i.id !== itemId)); showMsg('success', 'Removed from library.'); }
+    catch (e) { showMsg('error', e.message); }
+  };
+
+  const handleEditLibraryItem = async (itemId, { name, unit }) => {
+    await updateFoodLibraryItem(itemId, { name, unit });
+    setLibraryItems(prev => prev.map(i => i.id === itemId ? { ...i, name, unit } : i));
+  };
+
   const removeIngredient = (id) => setIngredients(prev => prev.filter(i => i.id !== id));
+
   const updateGrams = (id, grams) => {
     setIngredients(prev => prev.map(i => {
       if (i.id !== id) return i;
       return i.per100g ? { ...scaleToGrams(i, toNum(grams)), id: i.id, servingG: toNum(grams) } : i;
     }));
   };
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true); setSearchResults([]);
-    try { const results = await searchFoodUSDA(searchQuery); setSearchResults(results); if (results.length === 0) showMsg('error', 'No results found.'); }
-    catch (e) { showMsg('error', 'Search failed. Try again.'); } finally { setSearching(false); }
+    try {
+      const results = await searchFoodUSDA(searchQuery);
+      setSearchResults(results);
+      if (results.length === 0) showMsg('error', 'No results found.');
+    } catch (e) { showMsg('error', 'Search failed. Try again.'); } finally { setSearching(false); }
   };
+
   const handleBarcodeDetected = async (barcode) => {
     setScannerOpen(false); setBarcodeResult(null); setLookingUp(true);
     try {
       const [offResult, usdaResult] = await Promise.allSettled([lookupBarcode(barcode), lookupUSDABarcode(barcode)]);
-      const result = (offResult.status === 'fulfilled' && offResult.value) ? offResult.value : (usdaResult.status === 'fulfilled' && usdaResult.value) ? usdaResult.value : null;
-      if (result) setBarcodeResult({ ...result, barcode }); else showMsg('error', 'Product not found.');
+      const result = (offResult.status === 'fulfilled' && offResult.value)
+        ? offResult.value
+        : (usdaResult.status === 'fulfilled' && usdaResult.value)
+          ? usdaResult.value : null;
+      if (result) setBarcodeResult({ ...result, barcode });
+      else showMsg('error', 'Product not found.');
     } catch (e) { showMsg('error', 'Barcode lookup failed.'); } finally { setLookingUp(false); }
   };
+
   const handleManualAdd = () => {
     if (!manualFields.description.trim() || !manualFields.calories) return;
-    addIngredient({ description: manualFields.description.trim(), calories: toNum(manualFields.calories), protein: toNum(manualFields.protein), carbs: toNum(manualFields.carbs), fat: toNum(manualFields.fat), source: 'manual' });
+    addIngredient({
+      description: manualFields.description.trim(),
+      calories: toNum(manualFields.calories), protein: toNum(manualFields.protein),
+      carbs: toNum(manualFields.carbs), fat: toNum(manualFields.fat),
+      source: 'manual',
+    });
     setManualFields({ description: '', calories: '', protein: '', carbs: '', fat: '' });
   };
+
   const handleLog = () => {
     if (ingredients.length === 0) return;
     const name = mealName.trim() || ingredients.map(i => i.description).join(', ');
@@ -448,7 +610,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   };
 
   const inputStyle = { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14, padding: '10px 12px', boxSizing: 'border-box', fontFamily: 'var(--font-body)' };
-  const numStyle = { ...inputStyle, fontFamily: 'var(--font-mono)', textAlign: 'right' };
+  const numStyle   = { ...inputStyle, fontFamily: 'var(--font-mono)', textAlign: 'right' };
   const SubBtn = ({ id, label }) => (
     <button className={`nav-btn${subMode === id ? ' active' : ''}`} onClick={() => { setSubMode(id); setSearchResults([]); setScannerOpen(false); }} style={{ flex: 1, padding: '8px 4px', fontSize: 12 }}>{label}</button>
   );
@@ -456,10 +618,13 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
   return (
     <div>
       {saveLibraryModal && (
-        <SaveToLibraryModal item={saveLibraryModal} libraryItems={libraryItems} userId={userId}
+        <SaveToLibraryModal
+          item={saveLibraryModal} libraryItems={libraryItems} userId={userId}
           onSaved={(savedName) => { setSaveLibraryModal(null); reloadLibrary(); showMsg('success', `"${savedName}" saved to library!`); }}
-          onClose={() => setSaveLibraryModal(null)} />
+          onClose={() => setSaveLibraryModal(null)}
+        />
       )}
+
       {ingredients.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 14, padding: 12, background: 'var(--bg3)', borderRadius: 'var(--radius)' }}>
           {[['Cal', totals.calories, 'var(--accent)'], ['Pro', `${Math.round(totals.protein)}g`, 'var(--green)'], ['Carb', `${Math.round(totals.carbs)}g`, 'var(--blue)'], ['Fat', `${Math.round(totals.fat)}g`, 'var(--text2)']].map(([l, v, c]) => (
@@ -470,7 +635,9 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
           ))}
         </div>
       )}
+
       {msg && <div className={`sync-banner ${msg.type}`} style={{ marginBottom: 10 }}>{msg.text}</div>}
+
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <SubBtn id="library" label="📚 Library" />
         <SubBtn id="search"  label="🔍 Search"  />
@@ -481,10 +648,14 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
       {subMode === 'library' && (
         <div>
           <input type="text" value={librarySearch} onChange={e => setLibrarySearch(e.target.value)} placeholder="Filter library..." style={{ ...inputStyle, marginBottom: 10 }} />
-          {libraryItems.length === 0 && libraryLoaded && <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: 16 }}>Library is empty. Use Search to find foods and save them here.</div>}
-          {libraryItems.filter(i => !librarySearch || i.name.toLowerCase().includes(librarySearch.toLowerCase())).map(item => (
-            <LibraryItemRow key={item.id} item={item} onAdd={addFromLibrary} onDelete={handleDeleteLibraryItem} onEdit={handleEditLibraryItem} />
-          ))}
+          {libraryItems.length === 0 && libraryLoaded && (
+            <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: 16 }}>Library is empty. Use Search to find foods and save them here.</div>
+          )}
+          {libraryItems
+            .filter(i => !librarySearch || i.name.toLowerCase().includes(librarySearch.toLowerCase()))
+            .map(item => (
+              <LibraryItemRow key={item.id} item={item} onAdd={addFromLibrary} onDelete={handleDeleteLibraryItem} onEdit={handleEditLibraryItem} />
+            ))}
         </div>
       )}
 
@@ -495,16 +666,7 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
             <button className="sync-btn" onClick={handleSearch} disabled={searching || !searchQuery.trim()} style={{ flexShrink: 0, padding: '10px 14px' }}>{searching ? '...' : 'Go'}</button>
           </div>
           {searchResults.map((r, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description}</div>
-                <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}><span style={{ color: 'var(--accent)' }}>{r.calories} cal</span> · P:{r.protein}g · C:{r.carbs}g · F:{r.fat}g · per {r.servingG}g</div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0, marginLeft: 8 }}>
-                <button className="sync-btn" onClick={() => addIngredient(r)} style={{ padding: '6px 12px', fontSize: 12 }}>+ Add</button>
-                <button onClick={() => setSaveLibraryModal(r)} style={{ padding: '4px 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text3)', cursor: 'pointer', fontSize: 10 }}>📚 Save</button>
-              </div>
-            </div>
+            <SearchResultRow key={i} result={r} onAdd={() => addIngredient(r)} onSaveToLibrary={() => setSaveLibraryModal(r)} />
           ))}
         </div>
       )}
@@ -525,14 +687,11 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
                 <button className="sync-btn" disabled={lookingUp} onClick={() => { const val = document.getElementById('manual-barcode-input').value.trim(); if (val) handleBarcodeDetected(val); }} style={{ flexShrink: 0, padding: '10px 14px' }}>{lookingUp ? '...' : 'Look up'}</button>
               </div>
               {barcodeResult && (
-                <div style={{ padding: 12, background: 'var(--bg3)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{barcodeResult.description}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', marginBottom: 10 }}><span style={{ color: 'var(--accent)' }}>{barcodeResult.calories} cal</span>{' · '}P:{barcodeResult.protein}g · C:{barcodeResult.carbs}g · F:{barcodeResult.fat}g · per {barcodeResult.servingG}g</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="sync-btn" onClick={() => { addIngredient(barcodeResult); setBarcodeResult(null); }} style={{ flex: 1, padding: 10, fontSize: 13 }}>+ Add</button>
-                    <button onClick={() => setSaveLibraryModal(barcodeResult)} style={{ flex: 1, padding: 10, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>📚 Save to Library</button>
-                  </div>
-                </div>
+                <BarcodeResultCard
+                  result={barcodeResult}
+                  onAdd={() => { addIngredient(barcodeResult); setBarcodeResult(null); }}
+                  onSaveToLibrary={() => setSaveLibraryModal(barcodeResult)}
+                />
               )}
             </div>
           )}
@@ -553,7 +712,10 @@ function MealBuilder({ userId, onLog, onSaveRecipe }) {
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="sync-btn" onClick={handleManualAdd} disabled={!manualFields.description.trim() || !manualFields.calories} style={{ flex: 1, padding: 12 }}>+ Add Ingredient</button>
             <button
-              onClick={() => { if (!manualFields.description.trim() || !manualFields.calories) return; setSaveLibraryModal({ description: manualFields.description.trim(), calories: toNum(manualFields.calories), protein: toNum(manualFields.protein), carbs: toNum(manualFields.carbs), fat: toNum(manualFields.fat), servingG: null }); }}
+              onClick={() => {
+                if (!manualFields.description.trim() || !manualFields.calories) return;
+                setSaveLibraryModal({ description: manualFields.description.trim(), calories: toNum(manualFields.calories), protein: toNum(manualFields.protein), carbs: toNum(manualFields.carbs), fat: toNum(manualFields.fat), servingG: null, servingDescription: null });
+              }}
               disabled={!manualFields.description.trim() || !manualFields.calories}
               style={{ padding: '12px 14px', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}
               title="Save to library"
@@ -601,39 +763,36 @@ export default function FoodLogTab({ data, userId }) {
 
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const isToday = selectedDate === todayStr();
-  const goBack = () => setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), -1)));
+  const goBack    = () => setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), -1)));
   const goForward = () => { if (!isToday) setSelectedDate(prev => dateStr(offsetDate(new Date(prev + 'T12:00:00'), 1))); };
 
-  const [entries, setEntries] = useState([]);
+  const [entries, setEntries]           = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
-  const [mode, setMode] = useState('build');
-  const [textInput, setTextInput] = useState('');
-  const [estimating, setEstimating] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [photoBlob, setPhotoBlob] = useState(null);
+  const [mode, setMode]                 = useState('build');
+  const [textInput, setTextInput]       = useState('');
+  const [estimating, setEstimating]     = useState(false);
+  const [cameraOpen, setCameraOpen]     = useState(false);
+  const [photoBlob, setPhotoBlob]       = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [photoCaption, setPhotoCaption] = useState('');
   const [analyzingPhoto, setAnalyzingPhoto] = useState(false);
-  const [savedMeals, setSavedMeals] = useState([]);
+  const [savedMeals, setSavedMeals]     = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
-  const [savingMeal, setSavingMeal] = useState(false);
+  const [savingMeal, setSavingMeal]     = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [saveMealName, setSaveMealName] = useState('');
   const [saveMealServings, setSaveMealServings] = useState(1);
-  const [pendingSave, setPendingSave] = useState(null);
-  const [editingMeal, setEditingMeal] = useState(null);
+  const [pendingSave, setPendingSave]   = useState(null);
+  const [editingMeal, setEditingMeal]   = useState(null);
   const [editMealFields, setEditMealFields] = useState({});
-
-  // Library state for saved meals save-to-library
   const [libraryItems, setLibraryItems] = useState([]);
   const [libraryLoaded, setLibraryLoaded] = useState(false);
   const [saveToLibraryModal, setSaveToLibraryModal] = useState(null);
-
   const [editingEntry, setEditingEntry] = useState(null);
-  const [editFields, setEditFields] = useState({});
-  const [estimate, setEstimate] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState(null);
+  const [editFields, setEditFields]     = useState({});
+  const [estimate, setEstimate]         = useState(null);
+  const [saving, setSaving]             = useState(false);
+  const [msg, setMsg]                   = useState(null);
 
   const showMsg = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 3000); };
 
@@ -665,7 +824,7 @@ export default function FoodLogTab({ data, userId }) {
     fat:      entries.reduce((s, e) => s + (e.fat      || 0), 0),
   }), [entries]);
 
-  const net = tdee !== null ? totals.calories - tdee : null;
+  const net      = tdee !== null ? totals.calories - tdee : null;
   const netColor = net === null ? 'var(--text)' : net > 200 ? 'var(--red)' : net < -200 ? 'var(--green)' : 'var(--accent)';
 
   const handleTextEstimate = useCallback(async () => {
@@ -683,7 +842,9 @@ export default function FoodLogTab({ data, userId }) {
     if (!photoBlob) return;
     setAnalyzingPhoto(true); setEstimate(null);
     try {
-      const base64 = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result.split(',')[1]); r.onerror = reject; r.readAsDataURL(photoBlob); });
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader(); r.onload = () => resolve(r.result.split(',')[1]); r.onerror = reject; r.readAsDataURL(photoBlob);
+      });
       const promptText = photoCaption.trim()
         ? `Estimate the calories and macros for the food shown in this photo. Additional context: ${photoCaption.trim()}`
         : 'Estimate the calories and macros for the food shown in this photo.';
@@ -737,7 +898,6 @@ export default function FoodLogTab({ data, userId }) {
     } catch (e) { showMsg('error', `Save failed: ${e.message}`); } finally { setSaving(false); }
   }, [userId, selectedDate, loadEntries]);
 
-  // Save saved meal's per-serving macros to library
   const handleSavedMealToLibrary = useCallback((meal) => {
     const totalServings = meal.servings || 1;
     setSaveToLibraryModal({
@@ -746,7 +906,7 @@ export default function FoodLogTab({ data, userId }) {
       protein:  Math.round(meal.protein  / totalServings),
       carbs:    Math.round(meal.carbs    / totalServings),
       fat:      Math.round(meal.fat      / totalServings),
-      servingG: null,
+      servingG: null, servingDescription: null,
     });
   }, []);
 
@@ -771,6 +931,9 @@ export default function FoodLogTab({ data, userId }) {
     } catch (e) { showMsg('error', `Update failed: ${e.message}`); } finally { setSaving(false); }
   }, [editingEntry, editFields, userId, entries, loadEntries]);
 
+  const inputStyle    = { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14, padding: '10px 12px', boxSizing: 'border-box', fontFamily: 'var(--font-body)' };
+  const editInputBase = { width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, padding: '5px', boxSizing: 'border-box' };
+
   const MacroPill = ({ label, value, color }) => (
     <div style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 2 }}>{label}</div>
@@ -784,27 +947,21 @@ export default function FoodLogTab({ data, userId }) {
     <div style={{ marginTop: 14, padding: 14, background: 'var(--bg3)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
       <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 15 }}>{est.description}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 14 }}>
-        <MacroPill label="Calories" value={est.calories} color="var(--accent)" />
+        <MacroPill label="Calories" value={est.calories}              color="var(--accent)" />
         <MacroPill label="Protein"  value={`${Math.round(est.protein)}g`} color="var(--green)" />
-        <MacroPill label="Carbs"    value={`${Math.round(est.carbs)}g`} color="var(--blue)" />
-        <MacroPill label="Fat"      value={`${Math.round(est.fat)}g`} color="var(--text2)" />
+        <MacroPill label="Carbs"    value={`${Math.round(est.carbs)}g`}   color="var(--blue)"  />
+        <MacroPill label="Fat"      value={`${Math.round(est.fat)}g`}     color="var(--text2)" />
       </div>
       <button className="sync-btn" onClick={() => handleSave(est)} disabled={saving} style={{ width: '100%', padding: 12, fontSize: 14 }}>{saving ? 'Saving...' : '+ Log This Meal'}</button>
       <button onClick={() => handleSaveRecipe(est)} style={{ width: '100%', marginTop: 8, padding: '10px', fontSize: 13, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text2)', cursor: 'pointer' }}>Save as Meal</button>
     </div>
   );
 
-  const inputStyle = { width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 14, padding: '10px 12px', boxSizing: 'border-box', fontFamily: 'var(--font-body)' };
-  const numStyle = { ...inputStyle, fontFamily: 'var(--font-mono)', textAlign: 'right' };
-  const editInputBase = { width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12, padding: '5px', boxSizing: 'border-box' };
-
   return (
     <>
       {saveToLibraryModal && (
         <SaveToLibraryModal
-          item={saveToLibraryModal}
-          libraryItems={libraryItems}
-          userId={userId}
+          item={saveToLibraryModal} libraryItems={libraryItems} userId={userId}
           onSaved={(savedName) => { setSaveToLibraryModal(null); setLibraryLoaded(false); showMsg('success', `"${savedName}" saved to library!`); }}
           onClose={() => setSaveToLibraryModal(null)}
         />
@@ -875,10 +1032,8 @@ export default function FoodLogTab({ data, userId }) {
               <>
                 <img src={photoPreview} alt="Food" style={{ width: '100%', borderRadius: 'var(--radius)', marginBottom: 10, maxHeight: 240, objectFit: 'cover' }} />
                 <textarea
-                  value={photoCaption}
-                  onChange={e => setPhotoCaption(e.target.value)}
+                  value={photoCaption} onChange={e => setPhotoCaption(e.target.value)} rows={2}
                   placeholder="Optional: describe what's in the photo for better accuracy (e.g. 'grilled chicken breast with rice, about 6oz chicken')"
-                  rows={2}
                   style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-body)', padding: '10px 12px', resize: 'none', boxSizing: 'border-box', marginBottom: 8 }}
                 />
                 <div style={{ display: 'flex', gap: 8 }}>
