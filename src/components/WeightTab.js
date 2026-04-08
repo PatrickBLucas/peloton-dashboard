@@ -1,11 +1,12 @@
 // src/components/WeightTab.js
 import { useState, useMemo } from 'react';
-import { format, subDays, differenceInDays } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   ReferenceLine, CartesianGrid
 } from 'recharts';
 import { supabase } from '../lib/supabase';
+import { projectGoalDate } from '../utils';
 
 const SUPABASE_FUNCTIONS_URL = 'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtdGV2Zmxmcnlqa3Vka2NwbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNzA3NzgsImV4cCI6MjA4OTk0Njc3OH0.9riWHdjPggS9so5VXzcOmlQ-gsAREzZhfRmNAEEe2Rw';
@@ -91,19 +92,7 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
     }));
   }, [weight, goalWeight]);
 
-  const projectedDate = useMemo(() => {
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
-    const entries = weight.filter(w => w.weight && w.date >= cutoff).sort((a, b) => a.date - b.date);
-    if (entries.length < 5) return null;
-    const startDate = entries[0].date;
-    const points = entries.map(e => ({ x: differenceInDays(e.date, startDate), y: e.weight }));
-    const reg = linearRegression(points);
-    if (!reg || reg.slope >= 0) return null;
-    const daysToGoal = (goalWeight - reg.intercept) / reg.slope;
-    const goalDate = new Date(startDate); goalDate.setDate(goalDate.getDate() + Math.round(daysToGoal));
-    if (goalDate < new Date()) return null;
-    return goalDate;
-  }, [weight, goalWeight]);
+  const projectedDate = useMemo(() => projectGoalDate(weight, goalWeight), [weight, goalWeight]);
 
   const currentWeight = weight.filter(w => w.weight).slice(-1)[0];
   const startWeight   = weight.filter(w => w.weight)[0];

@@ -1,11 +1,13 @@
 // src/components/OverviewTab.js
 import { useMemo } from 'react';
-import { format, subDays, differenceInCalendarDays, parse } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar,
   ComposedChart, Line, ReferenceLine, Legend
 } from 'recharts';
 import { computeSleepStats } from '../api/supabase';
+import { projectGoalDate } from '../utils';
+import { format as dateFnsFormat, subDays as dateFnsSubDays, differenceInCalendarDays, parse } from 'date-fns';
 
 function StatCard({ label, value, sub, accent, color }) {
   return (
@@ -26,7 +28,7 @@ function computeStreak(workouts) {
 
   if (dates.length === 0) return { count: 0, lastWorkout: null };
 
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const today     = format(new Date(), 'yyyy-MM-dd');
   const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
 
   if (dates[0] !== today && dates[0] !== yesterday) {
@@ -36,7 +38,7 @@ function computeStreak(workouts) {
   let streak = 1;
   for (let i = 1; i < dates.length; i++) {
     const prev = parse(dates[i - 1], 'yyyy-MM-dd', new Date());
-    const curr = parse(dates[i], 'yyyy-MM-dd', new Date());
+    const curr = parse(dates[i],     'yyyy-MM-dd', new Date());
     if (differenceInCalendarDays(prev, curr) === 1) {
       streak++;
     } else {
@@ -55,14 +57,13 @@ export default function OverviewTab({ data }) {
   const netYesterday = stats.yesterdayConsumed && stats.yesterdayBurned
     ? Math.round(stats.yesterdayConsumed - stats.yesterdayBurned) : null;
 
-  const sleep = useMemo(() => computeSleepStats(fitbit), [fitbit]);
-
+  const sleep  = useMemo(() => computeSleepStats(fitbit), [fitbit]);
   const streak = useMemo(() => computeStreak(workouts), [workouts]);
 
   const streakSub = useMemo(() => {
     if (streak.count > 0) {
       const lastDate = format(parse(streak.lastWorkout, 'yyyy-MM-dd', new Date()), 'MMM d');
-      const isToday = streak.lastWorkout === format(new Date(), 'yyyy-MM-dd');
+      const isToday  = streak.lastWorkout === format(new Date(), 'yyyy-MM-dd');
       return isToday ? 'last workout: today' : `last workout: ${lastDate}`;
     }
     if (streak.lastWorkout) {
@@ -70,6 +71,12 @@ export default function OverviewTab({ data }) {
     }
     return 'no workouts logged';
   }, [streak]);
+
+  const projectedDate = useMemo(() => {
+    const date = projectGoalDate(weight, stats.goalWeight);
+    if (!date) return 'Not enough data';
+    return format(date, 'MMM d, yyyy');
+  }, [weight, stats.goalWeight]);
 
   const sleepEfficiencyColor = sleep.avgEfficiency === null ? null
     : sleep.avgEfficiency >= 90 ? 'green'
@@ -85,7 +92,7 @@ export default function OverviewTab({ data }) {
       .sort((a, b) => a.date - b.date)
       .slice(-20)
       .map(w => ({
-        date: format(w.date, 'MMM d'),
+        date:    format(w.date, 'MMM d'),
         minutes: Math.round(w.durationMin || 0),
       }));
   }, [workouts]);
@@ -107,7 +114,7 @@ export default function OverviewTab({ data }) {
 
     const netByDate = {};
     data.fitbit.filter(d => d.date >= cutoff).forEach(d => {
-      const ds = format(d.date, 'yyyy-MM-dd');
+      const ds       = format(d.date, 'yyyy-MM-dd');
       const burned   = d.caloriesOut || 0;
       const consumed = (data.foodLog || [])
         .filter(e => e.date === ds)
@@ -123,11 +130,10 @@ export default function OverviewTab({ data }) {
 
     const days = [];
     for (let i = 29; i >= 0; i--) {
-      const d   = subDays(today, i);
-      const ds  = format(d, 'yyyy-MM-dd');
-      const lbl = format(d, 'M/d');
+      const d  = subDays(today, i);
+      const ds = format(d, 'yyyy-MM-dd');
       days.push({
-        date:   lbl,
+        date:   format(d, 'M/d'),
         weight: weightByDate[ds] ?? null,
         net:    netByDate[ds]    ?? null,
         rode:   rideDates.has(ds) ? 1 : null,
@@ -135,37 +141,6 @@ export default function OverviewTab({ data }) {
     }
     return days;
   }, [weight, data.fitbit, data.foodLog, data.workouts]);
-
-  const projectedDate = useMemo(() => {
-    const getEntries = (days) => {
-      const cutoff = subDays(new Date(), days);
-      return weight
-        .filter(w => w.weight && w.date >= cutoff)
-        .sort((a, b) => a.date - b.date);
-    };
-
-    let entries = getEntries(30);
-    if (entries.length < 5) entries = getEntries(60);
-    if (entries.length < 5) return 'Not enough data';
-
-    const start = entries[0].date;
-    const pts = entries.map(e => ({
-      x: (e.date - start) / (1000 * 60 * 60 * 24),
-      y: e.weight,
-    }));
-    const n = pts.length;
-    const sumX  = pts.reduce((s, p) => s + p.x, 0);
-    const sumY  = pts.reduce((s, p) => s + p.y, 0);
-    const sumXY = pts.reduce((s, p) => s + p.x * p.y, 0);
-    const sumX2 = pts.reduce((s, p) => s + p.x * p.x, 0);
-    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    if (slope >= 0) return 'Not trending down';
-    const daysToGoal = (stats.goalWeight - intercept) / slope;
-    const goalDate = new Date(start.getTime() + daysToGoal * 86400000);
-    if (goalDate < new Date()) return 'Recalculating...';
-    return format(goalDate, 'MMM d, yyyy');
-  }, [weight, stats.goalWeight]);
 
   return (
     <>
@@ -205,23 +180,23 @@ export default function OverviewTab({ data }) {
       </div>
 
       <div className="stat-grid">
-        <StatCard label="Current Weight" value={stats.currentWeight ? `${stats.currentWeight} lbs` : '--'} sub={`Goal: ${stats.goalWeight} lbs`} accent />
-        <StatCard label="Pounds to Go" value={stats.poundsToGo !== null ? `${stats.poundsToGo}` : '--'} sub="until goal weight" color={stats.poundsToGo > 0 ? 'red' : 'green'} />
-        <StatCard label="Weight Lost" value={stats.weightLost ? `${stats.weightLost} lbs` : '--'} sub="since start" color="green" />
-        <StatCard label="Projected Goal" value={projectedDate} sub="based on trend" />
-        <StatCard label="BMR" value={stats.bmr ? stats.bmr.toLocaleString() : '--'} sub={`age ${stats.age}, ${stats.currentWeight} lbs`} />
-        <StatCard label="TDEE" value={stats.tdee ? stats.tdee.toLocaleString() : '--'} sub={stats.activityLevel ? `${stats.activityLevel} (×${stats.activityFactor?.toFixed(2)})` : 'moderate activity'} />
+        <StatCard label="Current Weight"  value={stats.currentWeight ? `${stats.currentWeight} lbs` : '--'} sub={`Goal: ${stats.goalWeight} lbs`} accent />
+        <StatCard label="Pounds to Go"    value={stats.poundsToGo !== null ? `${stats.poundsToGo}` : '--'} sub="until goal weight" color={stats.poundsToGo > 0 ? 'red' : 'green'} />
+        <StatCard label="Weight Lost"     value={stats.weightLost ? `${stats.weightLost} lbs` : '--'} sub="since start" color="green" />
+        <StatCard label="Projected Goal"  value={projectedDate} sub="based on trend" />
+        <StatCard label="BMR"             value={stats.bmr ? stats.bmr.toLocaleString() : '--'} sub={`age ${stats.age}, ${stats.currentWeight} lbs`} />
+        <StatCard label="TDEE"            value={stats.tdee ? stats.tdee.toLocaleString() : '--'} sub={stats.activityLevel ? `${stats.activityLevel} (×${stats.activityFactor?.toFixed(2)})` : 'moderate activity'} />
         <StatCard label="Total Activities" value={stats.rides ?? '--'} sub="all time" />
-        <StatCard label="Total Time" value={stats.totalMinutes ? `${Math.floor(stats.totalMinutes / 60)}h` : '--'} sub="all time" />
+        <StatCard label="Total Time"      value={stats.totalMinutes ? `${Math.floor(stats.totalMinutes / 60)}h` : '--'} sub="all time" />
       </div>
 
       <div className="section-label" style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '16px 0 8px' }}>
         Sleep — 7-Day Average {sleep.sampleDays > 0 ? `(${sleep.sampleDays} nights)` : ''}
       </div>
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-        <StatCard label="Avg Hours Slept" value={sleep.avgHours !== null ? `${sleep.avgHours}h` : '--'} sub="per night" color={sleepHoursColor} />
-        <StatCard label="Sleep Efficiency" value={sleep.avgEfficiency !== null ? `${sleep.avgEfficiency}%` : '--'} sub="time asleep / time in bed" color={sleepEfficiencyColor} />
-        <StatCard label="Avg Restlessness" value={sleep.avgRestlessCount !== null ? sleep.avgRestlessCount : '--'} sub="restless episodes / night" />
+        <StatCard label="Avg Hours Slept"   value={sleep.avgHours !== null ? `${sleep.avgHours}h` : '--'} sub="per night" color={sleepHoursColor} />
+        <StatCard label="Sleep Efficiency"  value={sleep.avgEfficiency !== null ? `${sleep.avgEfficiency}%` : '--'} sub="time asleep / time in bed" color={sleepEfficiencyColor} />
+        <StatCard label="Avg Restlessness"  value={sleep.avgRestlessCount !== null ? sleep.avgRestlessCount : '--'} sub="restless episodes / night" />
       </div>
 
       <div className="chart-grid">
@@ -229,7 +204,7 @@ export default function OverviewTab({ data }) {
           <div className="chart-title">Activity — Last 20 Sessions (minutes)</div>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={activityChart} barSize={12}>
-              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={0} angle={-45} textAnchor="end" height={40} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, angle: -45, textAnchor: 'end' }} tickLine={false} axisLine={false} interval={0} height={50} />
               <YAxis hide />
               <Tooltip
                 contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
@@ -249,11 +224,11 @@ export default function OverviewTab({ data }) {
               <AreaChart data={weightChart}>
                 <defs>
                   <linearGradient id="wGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.15} />
+                    <stop offset="5%"  stopColor="var(--accent)" stopOpacity={0.15} />
                     <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "var(--text2)" }} tickLine={false} axisLine={false} interval={0} angle={-45} textAnchor="end" height={40} />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--text2)', angle: -45, textAnchor: 'end' }} tickLine={false} axisLine={false} interval={0} height={50} />
                 <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={40} />
                 <Tooltip
                   contentStyle={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4 }}
@@ -272,15 +247,15 @@ export default function OverviewTab({ data }) {
 
       <div className="chart-card" style={{ marginTop: 16 }}>
         <div className="chart-title">Weight, Net Calories &amp; Rides — Last 30 Days</div>
-        <ResponsiveContainer width="100%" height={240}>
-          <ComposedChart data={comboChart} margin={{ top: 8, right: 8, bottom: 40, left: 0 }}>
+        <ResponsiveContainer width="100%" height={260}>
+          <ComposedChart data={comboChart} margin={{ top: 8, right: 8, bottom: 50, left: 0 }}>
             <defs>
               <linearGradient id="wGrad2" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%"  stopColor="var(--accent)" stopOpacity={0.15} />
                 <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--text2)' }} tickLine={false} axisLine={false} interval={2} angle={-45} textAnchor="end" height={40} />
+            <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--text2)', angle: -45, textAnchor: 'end' }} tickLine={false} axisLine={false} interval={2} height={50} />
             <YAxis yAxisId="w" domain={['auto', 'auto']} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={36} tickFormatter={v => `${v}`} />
             <YAxis yAxisId="n" orientation="right" domain={['auto', 'auto']} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={42} tickFormatter={v => `${v > 0 ? '+' : ''}${v}`} />
             <Tooltip
@@ -295,8 +270,8 @@ export default function OverviewTab({ data }) {
               }}
             />
             <ReferenceLine yAxisId="n" y={0} stroke="var(--border)" strokeDasharray="3 3" />
-            <Bar yAxisId="n" dataKey="net" name="Net Cal" fill="#4a90d9" opacity={0.6} radius={[2, 2, 0, 0]} barSize={6} />
-            <Bar yAxisId="n" dataKey="rode" name="Rode" fill="var(--accent)" opacity={0.9} radius={[2, 2, 0, 0]} barSize={4} />
+            <Bar  yAxisId="n" dataKey="net"    name="Net Cal" fill="#4a90d9" opacity={0.6} radius={[2, 2, 0, 0]} barSize={6} />
+            <Bar  yAxisId="n" dataKey="rode"   name="Rode"    fill="var(--accent)" opacity={0.9} radius={[2, 2, 0, 0]} barSize={4} />
             <Line yAxisId="w" type="monotone" dataKey="weight" name="Weight" stroke="var(--accent)" strokeWidth={2} dot={false} connectNulls />
             <Legend verticalAlign="top" height={24} formatter={(value) => <span style={{ fontSize: 11, color: 'var(--text2)' }}>{value}</span>} />
           </ComposedChart>
