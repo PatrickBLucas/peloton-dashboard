@@ -1,6 +1,6 @@
 /* public/service-worker.js */
 
-const CACHE_NAME = 'thrivemetrics-v5';
+const CACHE_NAME = 'thrivemetrics-v6';
 
 // App shell files to cache on install
 const APP_SHELL = [
