@@ -9,7 +9,6 @@ import {
 export default function CaloriesTab({ data }) {
   const { fitbit, foodLog = [], stats } = data;
 
-  // Build food log lookup by date string
   const foodByDate = useMemo(() => {
     const map = {};
     (foodLog || []).forEach(e => {
@@ -24,7 +23,6 @@ export default function CaloriesTab({ data }) {
     return map;
   }, [foodLog]);
 
-  // Last 30 days of calorie data
   const last30 = useMemo(() => {
     const cutoff = subDays(new Date(), 30);
     return fitbit
@@ -33,7 +31,6 @@ export default function CaloriesTab({ data }) {
       .map(d => {
         const dateStr = format(d.date, 'yyyy-MM-dd');
         const food = foodByDate[dateStr];
-        // Prefer Food Log data, fall back to Fitbit consumed
         const consumed = food ? Math.round(food.calories) : (d.caloriesConsumed ? Math.round(d.caloriesConsumed) : null);
         const protein  = food ? Math.round(food.protein)  : (d.protein  || null);
         const carbs    = food ? Math.round(food.carbs)    : (d.carbs    || null);
@@ -51,7 +48,6 @@ export default function CaloriesTab({ data }) {
       });
   }, [fitbit, foodByDate]);
 
-  // Averages
   const avgBurned = useMemo(() => {
     const vals = last30.filter(d => d.burned);
     return vals.length ? Math.round(vals.reduce((s, d) => s + d.burned, 0) / vals.length) : null;
@@ -64,7 +60,6 @@ export default function CaloriesTab({ data }) {
 
   const avgNet = avgConsumed && avgBurned ? avgConsumed - avgBurned : null;
 
-  // Macro averages
   const avgProtein = useMemo(() => {
     const vals = last30.filter(d => d.protein);
     return vals.length ? Math.round(vals.reduce((s, d) => s + d.protein, 0) / vals.length) : null;
@@ -80,6 +75,14 @@ export default function CaloriesTab({ data }) {
     return vals.length ? Math.round(vals.reduce((s, d) => s + d.fat, 0) / vals.length) : null;
   }, [last30]);
 
+  const xAxisProps = {
+    tick: { fontSize: 10, angle: -35, textAnchor: 'end' },
+    tickLine: false,
+    axisLine: false,
+    interval: 4,
+    height: 55,
+  };
+
   return (
     <>
       <div className="section-header">
@@ -87,7 +90,6 @@ export default function CaloriesTab({ data }) {
         <span className="section-sub">Last 30 days</span>
       </div>
 
-      {/* Summary row */}
       <div className="stat-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
           <div className="stat-label">Avg Burned / Day</div>
@@ -123,30 +125,28 @@ export default function CaloriesTab({ data }) {
         </div>
       </div>
 
-      {/* Calories in vs out */}
       <div className="chart-card">
         <div className="chart-title">Calories Burned vs Consumed — Last 30 Days</div>
-        <ResponsiveContainer width="100%" height={240}>
-          <ComposedChart data={last30}>
+        <ResponsiveContainer width="100%" height={260}>
+          <ComposedChart data={last30} margin={{ bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
-            <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={4} />
+            <XAxis dataKey="date" {...xAxisProps} />
             <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={44} />
             <Tooltip
               contentStyle={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 4 }}
               labelStyle={{ color: '#888', fontSize: 11 }}
               formatter={(v, name) => [v?.toLocaleString(), name === 'burned' ? 'Burned' : 'Consumed']}
             />
-            <Bar dataKey="burned" fill="#ff4500" opacity={0.7} radius={[2, 2, 0, 0]} barSize={8} name="burned" />
+            <Bar dataKey="burned"   fill="#ff4500" opacity={0.7} radius={[2, 2, 0, 0]} barSize={8} name="burned" />
             <Bar dataKey="consumed" fill="#2979ff" opacity={0.7} radius={[2, 2, 0, 0]} barSize={8} name="consumed" />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Net calories */}
       <div className="chart-card" style={{ marginTop: 16 }}>
         <div className="chart-title">Net Calories (Consumed - Burned) — Negative = Deficit</div>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={last30}>
+        <ResponsiveContainer width="100%" height={220}>
+          <AreaChart data={last30} margin={{ bottom: 10 }}>
             <defs>
               <linearGradient id="netPos" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#ff1744" stopOpacity={0.3} />
@@ -158,21 +158,14 @@ export default function CaloriesTab({ data }) {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
-            <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={4} />
+            <XAxis dataKey="date" {...xAxisProps} />
             <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={44} />
             <Tooltip
               contentStyle={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 4 }}
               labelStyle={{ color: '#888', fontSize: 11 }}
               formatter={(v) => [v?.toLocaleString(), 'Net']}
             />
-            <Area
-              type="monotone"
-              dataKey="net"
-              stroke="#e8ff00"
-              strokeWidth={2}
-              fill="url(#netPos)"
-              dot={false}
-            />
+            <Area type="monotone" dataKey="net" stroke="#e8ff00" strokeWidth={2} fill="url(#netPos)" dot={false} />
           </AreaChart>
         </ResponsiveContainer>
       </div>

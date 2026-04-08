@@ -46,7 +46,6 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
         'apikey':        ANON_KEY,
       };
 
-      // Post weight to Fitbit
       const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/log-weight`, {
         method: 'POST',
         headers,
@@ -60,16 +59,13 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
       setWeightInput('');
       setLogMsg({ type: 'success', text: `${lbs} lbs logged — syncing Fitbit...` });
 
-      // Auto-sync Fitbit so chart updates immediately
       try {
         await fetch(`${SUPABASE_FUNCTIONS_URL}/sync-fitbit`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ user_id: userId }),
         });
-      } catch (_) {
-        // Sync failure is non-fatal -- data will catch up on next scheduled sync
-      }
+      } catch (_) {}
 
       setLogMsg({ type: 'success', text: `${lbs} lbs logged!` });
       setTimeout(() => setLogMsg(null), 3000);
@@ -220,8 +216,8 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
       <div className="chart-card">
         <div className="chart-title">Weight History + Trend Line</div>
         {chartData.length > 1 ? (
-          <ResponsiveContainer width="100%" height={320}>
-            <AreaChart data={chartData}>
+          <ResponsiveContainer width="100%" height={340}>
+            <AreaChart data={chartData} margin={{ bottom: 40 }}>
               <defs>
                 <linearGradient id="wFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor="#e8ff00" stopOpacity={0.1} />
@@ -229,7 +225,14 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval={Math.floor(chartData.length / 8)} />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 11, angle: -35, textAnchor: 'end' }}
+                tickLine={false}
+                axisLine={false}
+                interval={Math.floor(chartData.length / 8)}
+                height={60}
+              />
               <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={44} />
               <Tooltip
                 contentStyle={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 4 }}
