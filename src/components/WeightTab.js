@@ -180,7 +180,7 @@ export default function WeightTab({ data, userId, onWeightLogged }) {
         </div>
         <div className="weight-stat">
           <div className="weight-stat-label">Projected Goal</div>
-          <div className="weight-stat-val" style={{ color: 'var(--blue)', fontSize: 20 }}>
+          <div className="weight-stat-val" style={{ color: 'var(--blue)'}}>
             {projectedDate ? format(projectedDate, 'MMM d, yyyy') : '--'}
           </div>
         </div>
