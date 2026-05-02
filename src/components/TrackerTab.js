@@ -166,7 +166,7 @@ export default function TrackerTab({ data }) {
     doc.text(String(prevTotal), col3, y + 6);
 
     // Footer
-    y += 20;
+    y += 14;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(0);
@@ -175,12 +175,11 @@ export default function TrackerTab({ data }) {
     const diffStr = diff >= 0 ? `+${diff}` : String(diff);
     const diffColor = diff >= 0 ? [0, 140, 0] : [180, 0, 0];
 
-    doc.text(`Total Minutes: ${prevTotal}`, col1, y);
-    y += 14;
-    doc.text('i-Health Goal: 600', col1, y);
+    doc.text('i-Health Goal:', col2, y);
+    doc.text('600', col3, y);
     y += 14;
     doc.setTextColor(...diffColor);
-    doc.text(diffStr, col1, y);
+    doc.text(diffStr, col3, y);
     doc.setTextColor(0);
 
     return {
