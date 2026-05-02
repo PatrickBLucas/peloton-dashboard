@@ -94,70 +94,85 @@ export default function TrackerTab({ data }) {
     const jsPDF = await loadJsPDF();
     const doc   = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
 
-    const pageW     = 612;
-    const margin    = 60;
-    const contentW  = pageW - margin * 2;
+    const pageW    = 612;
+    const margin   = 54;
+    const contentW = pageW - margin * 2;
     const monthName = format(prevMonthDate, 'MMMM yyyy');
-    const prevTotal = prevMonthActivities.reduce((s, a) => s + a.minutes, 0);
+
+    // Consolidate inline so PDF is always correct regardless of memo state
+    const dayMap = new Map();
+    for (const w of prevMonthActivities) {
+      const key = format(w.date, 'yyyy-MM-dd');
+      if (dayMap.has(key)) {
+        dayMap.get(key).minutes += w.minutes;
+      } else {
+        dayMap.set(key, { date: w.date, minutes: w.minutes });
+      }
+    }
+    const consolidated = Array.from(dayMap.values()).sort((a, b) => a.date - b.date);
+
+    const prevTotal = consolidated.reduce((s, a) => s + a.minutes, 0);
     const prevHours = prevTotal / 60;
 
+    // Scale row height to fit all rows on one page
+    const availableHeight = 792 - 110 - 40 - 70;
+    const rowHeight = consolidated.length > 0
+      ? Math.min(16, Math.max(11, Math.floor(availableHeight / (consolidated.length + 2))))
+      : 16;
+    const fontSize = rowHeight >= 14 ? 10 : rowHeight >= 12 ? 9 : 8;
+
     // Header
-    doc.setFontSize(16);
+    doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('Patrick Lucas', margin, 80);
-
-    doc.setFontSize(13);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Month of ${monthName}`, margin, 100);
-
-    // Table header
-    const tableTop = 130;
-    const col1 = margin;
-    const col2 = margin + 200;
-    const col3 = margin + 420;
+    doc.text('Patrick Lucas', margin, 60);
 
     doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Month of ${monthName}`, margin, 78);
+
+    // Table header
+    const tableTop = 104;
+    const col1 = margin;
+    const col2 = margin + 192;
+    const col3 = margin + 390;
+
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.text('Date', col1, tableTop);
     doc.text('Activity Description', col2, tableTop);
     doc.text('Time Spent (min.)', col3, tableTop);
 
     doc.setLineWidth(0.5);
-    doc.line(margin, tableTop + 6, margin + contentW, tableTop + 6);
+    doc.line(margin, tableTop + 5, margin + contentW, tableTop + 5);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    let y = tableTop + 24;
+    doc.setFontSize(fontSize);
+    let y = tableTop + rowHeight + 4;
 
-    for (const activity of prevMonthActivities) {
-      if (y > 680) {
-        doc.addPage();
-        y = 60;
-      }
+    for (const activity of consolidated) {
       doc.text(formatDateLong(activity.date), col1, y);
-      doc.text(activity.description, col2, y);
+      doc.text('Peloton Cycling', col2, y);
       doc.text(String(activity.minutes), col3, y);
-      y += 20;
+      y += rowHeight;
     }
 
     // Total row
-    y += 10;
+    y += 4;
     doc.setLineWidth(0.5);
-    doc.line(margin, y - 6, margin + contentW, y - 6);
+    doc.line(margin, y - 4, margin + contentW, y - 4);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('Total', col2, y + 4);
-    doc.text(String(prevTotal), col3, y + 4);
+    doc.setFontSize(10);
+    doc.text('Total', col2, y + 6);
+    doc.text(String(prevTotal), col3, y + 6);
 
     // Footer note
-    y += 40;
+    y += 28;
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(120);
+    doc.setFontSize(9);
+    doc.setTextColor(100);
     doc.text(`${prevHours.toFixed(1)} hours of exercise logged in ${monthName}`, margin, y);
-    doc.text('i-Health Goal: 600 minutes (10 hours)', margin, y + 16);
+    doc.text('i-Health Goal: 600 minutes (10 hours)', margin, y + 13);
 
-    // Return as base64 string (no 'data:...' prefix)
     return {
       base64: doc.output('datauristring').split(',')[1],
       monthName,
