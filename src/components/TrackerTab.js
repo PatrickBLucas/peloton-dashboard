@@ -165,13 +165,30 @@ export default function TrackerTab({ data }) {
     doc.text('Total', col2, y + 6);
     doc.text(String(prevTotal), col3, y + 6);
 
-    // Footer note
-    y += 28;
+    // Footer -- match spreadsheet format:
+    // Row 1: blank | 600 | <total minutes>
+    // Row 2: blank | i-Health Goal: | 600
+    // Row 3: blank | blank | <difference>
+    y += 20;
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(100);
-    doc.text(`${prevHours.toFixed(1)} hours of exercise logged in ${monthName}`, margin, y);
-    doc.text('i-Health Goal: 600 minutes (10 hours)', margin, y + 13);
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+
+    const diff = prevTotal - 600;
+    const diffStr = diff >= 0 ? `+${diff}` : String(diff);
+    const diffColor = diff >= 0 ? [0, 140, 0] : [180, 0, 0];
+
+    doc.text('600', col2, y);
+    doc.text(String(prevTotal), col3, y);
+
+    y += 14;
+    doc.text('i-Health Goal:', col2, y);
+    doc.text('600', col3, y);
+
+    y += 14;
+    doc.setTextColor(...diffColor);
+    doc.text(diffStr, col3, y);
+    doc.setTextColor(0);
 
     return {
       base64: doc.output('datauristring').split(',')[1],
