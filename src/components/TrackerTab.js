@@ -5,6 +5,8 @@ import { format, startOfMonth, endOfMonth, isWithinInterval, subMonths } from 'd
 const TARGET_HOURS   = 10;
 const TARGET_MINUTES = TARGET_HOURS * 60;
 
+const RECIPIENT_EMAIL = 'plucas82@gmail.com';
+
 // Dynamically load jsPDF from CDN
 function loadJsPDF() {
   return new Promise((resolve, reject) => {
@@ -23,9 +25,24 @@ function formatDateLong(date) {
   return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 }
 
+// Consolidate workouts by date -- sum minutes, always label "Peloton Cycling"
+function consolidateByDay(activities) {
+  const map = new Map();
+  for (const a of activities) {
+    const key = format(a.date, 'yyyy-MM-dd');
+    if (map.has(key)) {
+      map.get(key).minutes += a.minutes;
+    } else {
+      map.set(key, { date: a.date, description: 'Peloton Cycling', minutes: a.minutes });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.date - b.date);
+}
+
 export default function TrackerTab({ data }) {
   const { workouts } = data;
   const [generating, setGenerating] = useState(false);
+  const [emailStatus, setEmailStatus] = useState(null); // null | 'sending' | 'sent' | 'error'
 
   const now        = new Date();
   const monthStart = startOfMonth(now);
@@ -36,28 +53,30 @@ export default function TrackerTab({ data }) {
   const prevMonthStart = startOfMonth(prevMonthDate);
   const prevMonthEnd   = endOfMonth(prevMonthDate);
 
-  // Current month activities for display
+  // Current month activities for display (consolidated)
   const thisMonthActivities = useMemo(() => {
-    return workouts
+    const raw = workouts
       .filter(w => w.date && isWithinInterval(w.date, { start: monthStart, end: monthEnd }))
       .sort((a, b) => a.date - b.date)
       .map(w => ({
         date:        w.date,
-        description: `Peloton ${w.type}`,
+        description: 'Peloton Cycling',
         minutes:     Math.round(w.durationMin || 0),
       }));
+    return consolidateByDay(raw);
   }, [workouts, monthStart, monthEnd]);
 
-  // Previous month activities for PDF
+  // Previous month activities for PDF (consolidated)
   const prevMonthActivities = useMemo(() => {
-    return workouts
+    const raw = workouts
       .filter(w => w.date && isWithinInterval(w.date, { start: prevMonthStart, end: prevMonthEnd }))
       .sort((a, b) => a.date - b.date)
       .map(w => ({
         date:        w.date,
-        description: `Peloton ${w.type}`,
+        description: 'Peloton Cycling',
         minutes:     Math.round(w.durationMin || 0),
       }));
+    return consolidateByDay(raw);
   }, [workouts, prevMonthStart, prevMonthEnd]);
 
   const totalMinutes = thisMonthActivities.reduce((s, t) => s + (t.minutes || 0), 0);
@@ -69,85 +88,167 @@ export default function TrackerTab({ data }) {
     ? (hoursLeft / daysLeft) * 7 <= TARGET_HOURS / 4
     : totalHours >= TARGET_HOURS;
 
+  // Build the PDF as a base64 string (no download)
+  const buildPDFBase64 = useCallback(async () => {
+    const jsPDF = await loadJsPDF();
+    const doc   = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+
+    const pageW     = 612;
+    const margin    = 60;
+    const contentW  = pageW - margin * 2;
+    const monthName = format(prevMonthDate, 'MMMM yyyy');
+    const prevTotal = prevMonthActivities.reduce((s, a) => s + a.minutes, 0);
+    const prevHours = prevTotal / 60;
+
+    // Header
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Patrick Lucas', margin, 80);
+
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Month of ${monthName}`, margin, 100);
+
+    // Table header
+    const tableTop = 130;
+    const col1 = margin;
+    const col2 = margin + 200;
+    const col3 = margin + 420;
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Date', col1, tableTop);
+    doc.text('Activity Description', col2, tableTop);
+    doc.text('Time Spent (min.)', col3, tableTop);
+
+    doc.setLineWidth(0.5);
+    doc.line(margin, tableTop + 6, margin + contentW, tableTop + 6);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    let y = tableTop + 24;
+
+    for (const activity of prevMonthActivities) {
+      if (y > 680) {
+        doc.addPage();
+        y = 60;
+      }
+      doc.text(formatDateLong(activity.date), col1, y);
+      doc.text(activity.description, col2, y);
+      doc.text(String(activity.minutes), col3, y);
+      y += 20;
+    }
+
+    // Total row
+    y += 10;
+    doc.setLineWidth(0.5);
+    doc.line(margin, y - 6, margin + contentW, y - 6);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('Total', col2, y + 4);
+    doc.text(String(prevTotal), col3, y + 4);
+
+    // Footer note
+    y += 40;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    doc.text(`${prevHours.toFixed(1)} hours of exercise logged in ${monthName}`, margin, y);
+    doc.text('i-Health Goal: 600 minutes (10 hours)', margin, y + 16);
+
+    // Return as base64 string (no 'data:...' prefix)
+    return {
+      base64: doc.output('datauristring').split(',')[1],
+      monthName,
+      fileName: `P. Lucas 10-8 ${format(prevMonthDate, 'MMMM yyyy')}.pdf`,
+    };
+  }, [prevMonthActivities, prevMonthDate]);
+
   const generatePDF = useCallback(async () => {
     setGenerating(true);
     try {
-      const jsPDF = await loadJsPDF();
-      const doc   = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
-
-      const pageW  = 612;
-      const margin = 60;
-      const contentW = pageW - margin * 2;
-      const monthName = format(prevMonthDate, 'MMMM yyyy');
-      const prevTotal = prevMonthActivities.reduce((s, a) => s + a.minutes, 0);
-      const prevHours = prevTotal / 60;
-
-      // Header
-      doc.setFontSize(16);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Patrick Lucas', margin, 80);
-
-      doc.setFontSize(13);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Month of ${monthName}`, margin, 100);
-
-      // Table header
-      const tableTop = 130;
-      const col1 = margin;         // Date
-      const col2 = margin + 200;   // Activity Description
-      const col3 = margin + 420;   // Time Spent
-
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Date', col1, tableTop);
-      doc.text('Activity Description', col2, tableTop);
-      doc.text('Time Spent (min.)', col3, tableTop);
-
-      // Header underline
-      doc.setLineWidth(0.5);
-      doc.line(margin, tableTop + 6, margin + contentW, tableTop + 6);
-
-      // Table rows
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      let y = tableTop + 24;
-
-      for (const activity of prevMonthActivities) {
-        if (y > 680) {
-          doc.addPage();
-          y = 60;
-        }
-        doc.text(formatDateLong(activity.date), col1, y);
-        doc.text(activity.description, col2, y);
-        doc.text(String(activity.minutes), col3, y);
-        y += 20;
-      }
-
-      // Total row
-      y += 10;
-      doc.setLineWidth(0.5);
-      doc.line(margin, y - 6, margin + contentW, y - 6);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('Total', col2, y + 4);
-      doc.text(String(prevTotal), col3, y + 4);
-
-      // Footer note
-      y += 40;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(120);
-      doc.text(`${prevHours.toFixed(1)} hours of exercise logged in ${monthName}`, margin, y);
-      doc.text('i-Health Goal: 600 minutes (10 hours)', margin, y + 16);
-
-      doc.save(`P. Lucas 10-8 ${format(prevMonthDate, 'MMMM yyyy')}.pdf`);
+      const { base64, fileName } = await buildPDFBase64();
+      // Trigger download by creating a blob URL
+      const bytes = atob(base64);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      const blob = new Blob([arr], { type: 'application/pdf' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error('PDF generation failed:', e);
       alert('PDF generation failed. Please try again.');
     } finally {
       setGenerating(false);
     }
-  }, [prevMonthActivities, prevMonthDate]);
+  }, [buildPDFBase64]);
+
+  const emailPDF = useCallback(async () => {
+    setEmailStatus('sending');
+    try {
+      const { base64, monthName, fileName } = await buildPDFBase64();
+
+      const monthName2 = format(prevMonthDate, 'MMMM yyyy');
+
+      // Build the Gmail API message via MCP
+      // We send via the Anthropic API with Gmail MCP
+      const { supabaseClient } = data; // may not exist -- fall back to direct fetch
+
+      // Call claude-proxy to send the email via Gmail MCP
+      // Since we can't call MCP directly from the browser, we use the Anthropic API
+      // with Gmail MCP configured, which will handle the send
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          system: 'You are a helpful assistant that sends emails. When asked to send an email with an attachment, use the Gmail tool to do so. Confirm success with: SENT',
+          messages: [
+            {
+              role: 'user',
+              content: `Please send an email via Gmail with the following details:
+To: ${RECIPIENT_EMAIL}
+Subject: 10-8 Insurance Report - ${monthName2}
+Body: Please find attached my 10-8 insurance exercise report for ${monthName2}.
+
+The attachment is a PDF file named "${fileName}". The base64-encoded content of the PDF is:
+${base64}
+
+Send it as an attachment with media type application/pdf.`,
+            },
+          ],
+          mcp_servers: [
+            {
+              type: 'url',
+              url: 'https://gmailmcp.googleapis.com/mcp/v1',
+              name: 'gmail-mcp',
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) throw new Error(`API error ${response.status}`);
+      const result = await response.json();
+      const text = result.content?.map(b => b.text || '').join('') || '';
+
+      if (text.includes('SENT') || text.toLowerCase().includes('sent')) {
+        setEmailStatus('sent');
+        setTimeout(() => setEmailStatus(null), 4000);
+      } else {
+        console.error('Unexpected response:', text);
+        throw new Error('Email send not confirmed');
+      }
+    } catch (e) {
+      console.error('Email failed:', e);
+      setEmailStatus('error');
+      setTimeout(() => setEmailStatus(null), 4000);
+    }
+  }, [buildPDFBase64, prevMonthDate, data]);
 
   return (
     <>
@@ -156,24 +257,37 @@ export default function TrackerTab({ data }) {
         <span className="section-sub">{format(now, 'MMMM yyyy')}</span>
       </div>
 
-      {/* Download previous month PDF */}
+      {/* Download / Email previous month PDF */}
       <div className="chart-card" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
             {format(prevMonthDate, 'MMMM yyyy')} Report
           </div>
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            {prevMonthActivities.length} activities · {Math.floor(prevMonthActivities.reduce((s,a) => s + a.minutes, 0) / 60)}h {prevMonthActivities.reduce((s,a) => s + a.minutes, 0) % 60}m total
+            {prevMonthActivities.length} days · {Math.floor(prevMonthActivities.reduce((s,a) => s + a.minutes, 0) / 60)}h {prevMonthActivities.reduce((s,a) => s + a.minutes, 0) % 60}m total
           </div>
         </div>
-        <button
-          className="sync-btn"
-          onClick={generatePDF}
-          disabled={generating || prevMonthActivities.length === 0}
-          style={{ padding: '10px 20px', flexShrink: 0 }}
-        >
-          {generating ? '...' : '📄 Download PDF'}
-        </button>
+        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+          <button
+            className="sync-btn"
+            onClick={generatePDF}
+            disabled={generating || prevMonthActivities.length === 0}
+            style={{ padding: '10px 20px' }}
+          >
+            {generating ? '...' : '📄 Download PDF'}
+          </button>
+          <button
+            className="sync-btn"
+            onClick={emailPDF}
+            disabled={emailStatus === 'sending' || prevMonthActivities.length === 0}
+            style={{
+              padding: '10px 20px',
+              background: emailStatus === 'sent' ? 'var(--green)' : emailStatus === 'error' ? 'var(--accent2)' : undefined,
+            }}
+          >
+            {emailStatus === 'sending' ? '...' : emailStatus === 'sent' ? '✓ Sent' : emailStatus === 'error' ? 'Failed' : '✉ Email PDF'}
+          </button>
+        </div>
       </div>
 
       <div className="tracker-108">
