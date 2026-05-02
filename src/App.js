@@ -12,7 +12,10 @@ function LoginScreen({ expired = false }) {
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: window.location.origin,
+        scopes: 'https://www.googleapis.com/auth/gmail.send',
+      },
     });
   };
 
@@ -133,4 +136,4 @@ export default function App() {
       onLogout={() => supabase.auth.signOut()}
     />
   );
-} 
+}

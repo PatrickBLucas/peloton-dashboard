@@ -1,6 +1,7 @@
 // src/components/TrackerTab.js
 import { useState, useMemo, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, isWithinInterval, subMonths } from 'date-fns';
+import { supabase } from '../lib/supabase';
 
 const TARGET_HOURS   = 10;
 const TARGET_MINUTES = TARGET_HOURS * 60;
@@ -192,63 +193,47 @@ export default function TrackerTab({ data }) {
     try {
       const { base64, monthName, fileName } = await buildPDFBase64();
 
-      const monthName2 = format(prevMonthDate, 'MMMM yyyy');
+      // Get the current session for auth token + Google provider token
+      const { data: { session } } = await supabase.auth.getSession();
 
-      // Build the Gmail API message via MCP
-      // We send via the Anthropic API with Gmail MCP
-      const { supabaseClient } = data; // may not exist -- fall back to direct fetch
+      const accessToken   = session?.access_token;
+      const providerToken = session?.provider_token;
 
-      // Call claude-proxy to send the email via Gmail MCP
-      // Since we can't call MCP directly from the browser, we use the Anthropic API
-      // with Gmail MCP configured, which will handle the send
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: 'You are a helpful assistant that sends emails. When asked to send an email with an attachment, use the Gmail tool to do so. Confirm success with: SENT',
-          messages: [
-            {
-              role: 'user',
-              content: `Please send an email via Gmail with the following details:
-To: ${RECIPIENT_EMAIL}
-Subject: 10-8 Insurance Report - ${monthName2}
-Body: Please find attached my 10-8 insurance exercise report for ${monthName2}.
-
-The attachment is a PDF file named "${fileName}". The base64-encoded content of the PDF is:
-${base64}
-
-Send it as an attachment with media type application/pdf.`,
-            },
-          ],
-          mcp_servers: [
-            {
-              type: 'url',
-              url: 'https://gmailmcp.googleapis.com/mcp/v1',
-              name: 'gmail-mcp',
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) throw new Error(`API error ${response.status}`);
-      const result = await response.json();
-      const text = result.content?.map(b => b.text || '').join('') || '';
-
-      if (text.includes('SENT') || text.toLowerCase().includes('sent')) {
-        setEmailStatus('sent');
-        setTimeout(() => setEmailStatus(null), 4000);
-      } else {
-        console.error('Unexpected response:', text);
-        throw new Error('Email send not confirmed');
+      if (!providerToken) {
+        throw new Error('Google token not available. Please sign out and sign back in to grant Gmail access.');
       }
+
+      const response = await fetch(
+        'https://hmtevflfryjkudkcpmac.supabase.co/functions/v1/send-report-email',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhtdGV2Zmxmcnlqa3Vka2NwbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNzA3NzgsImV4cCI6MjA4OTk0Njc3OH0.9riWHdjPggS9so5VXzcOmlQ-gsAREzZhfRmNAEEe2Rw',
+          },
+          body: JSON.stringify({
+            providerToken,
+            pdfBase64: base64,
+            fileName,
+            monthName,
+            recipientEmail: RECIPIENT_EMAIL,
+          }),
+        }
+      );
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+
+      setEmailStatus('sent');
+      setTimeout(() => setEmailStatus(null), 4000);
     } catch (e) {
       console.error('Email failed:', e);
+      alert(e.message || 'Email failed. Check console for details.');
       setEmailStatus('error');
       setTimeout(() => setEmailStatus(null), 4000);
     }
-  }, [buildPDFBase64, prevMonthDate, data]);
+  }, [buildPDFBase64]);
 
   return (
     <>
