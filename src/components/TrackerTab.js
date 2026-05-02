@@ -165,10 +165,7 @@ export default function TrackerTab({ data }) {
     doc.text('Total', col2, y + 6);
     doc.text(String(prevTotal), col3, y + 6);
 
-    // Footer -- match spreadsheet format:
-    // Row 1: blank | 600 | <total minutes>
-    // Row 2: blank | i-Health Goal: | 600
-    // Row 3: blank | blank | <difference>
+    // Footer
     y += 20;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
@@ -178,16 +175,12 @@ export default function TrackerTab({ data }) {
     const diffStr = diff >= 0 ? `+${diff}` : String(diff);
     const diffColor = diff >= 0 ? [0, 140, 0] : [180, 0, 0];
 
-    doc.text('600', col2, y);
-    doc.text(String(prevTotal), col3, y);
-
+    doc.text(`Total Minutes: ${prevTotal}`, col1, y);
     y += 14;
-    doc.text('i-Health Goal:', col2, y);
-    doc.text('600', col3, y);
-
+    doc.text('i-Health Goal: 600', col1, y);
     y += 14;
     doc.setTextColor(...diffColor);
-    doc.text(diffStr, col3, y);
+    doc.text(diffStr, col1, y);
     doc.setTextColor(0);
 
     return {
