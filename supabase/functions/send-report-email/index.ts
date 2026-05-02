@@ -1,8 +1,6 @@
 // supabase/functions/send-report-email/index.ts
-import { serve } from 'https://deno.land/x/sift@0.6.0/mod.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SB_SERVICE_ROLE_KEY')!;
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 
@@ -11,13 +9,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Verify the user is authenticated
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
@@ -28,7 +25,6 @@ serve(async (req: Request) => {
 
     const accessToken = authHeader.replace('Bearer ', '');
 
-    // Get the user's Google OAuth token from Supabase
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const { data: { user }, error: userError } = await supabase.auth.getUser(accessToken);
 
@@ -39,26 +35,24 @@ serve(async (req: Request) => {
       });
     }
 
-    // Get the Google provider token from the session
-    // The provider_token is passed from the client in the request body
     const body = await req.json();
     const { providerToken, pdfBase64, fileName, monthName, recipientEmail } = body;
 
     if (!providerToken) {
-      return new Response(JSON.stringify({ error: 'Missing Google provider token. Please sign out and sign back in.' }), {
+      return new Response(JSON.stringify({ error: 'Google token not available. Please sign out and sign back in.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     if (!pdfBase64 || !fileName || !monthName || !recipientEmail) {
-      return new Response(JSON.stringify({ error: 'Missing required fields: pdfBase64, fileName, monthName, recipientEmail' }), {
+      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Build the RFC 2822 email with PDF attachment
+    // Build RFC 2822 email with PDF attachment
     const boundary = `boundary_${Date.now()}`;
     const emailBody = [
       `To: ${recipientEmail}`,
@@ -81,13 +75,12 @@ serve(async (req: Request) => {
       `--${boundary}--`,
     ].join('\r\n');
 
-    // Base64url encode the full email (Gmail API requirement)
-    const encodedEmail = btoa(emailBody)
+    // Gmail API requires base64url encoding of the full RFC 2822 message
+    const encodedEmail = btoa(unescape(encodeURIComponent(emailBody)))
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
-    // Send via Gmail API
     const gmailResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
       method: 'POST',
       headers: {
@@ -99,9 +92,8 @@ serve(async (req: Request) => {
 
     if (!gmailResponse.ok) {
       const gmailError = await gmailResponse.json();
-      console.error('Gmail API error:', gmailError);
+      console.error('Gmail API error:', JSON.stringify(gmailError));
 
-      // Token expired is the most common failure -- give a clear message
       if (gmailResponse.status === 401) {
         return new Response(JSON.stringify({ error: 'Google token expired. Please sign out and sign back in.' }), {
           status: 401,
