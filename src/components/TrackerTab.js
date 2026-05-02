@@ -162,11 +162,12 @@ export default function TrackerTab({ data }) {
     doc.line(margin, y - 4, margin + contentW, y - 4);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text('Total', col2, y + 6);
-    doc.text(String(prevTotal), col3, y + 6);
+    y += 14;
+    doc.text('Total', col2, y);
+    doc.text(String(prevTotal), col3, y);
 
     // Footer
-    y += 14;
+    y += 16;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(0);
@@ -177,7 +178,7 @@ export default function TrackerTab({ data }) {
 
     doc.text('i-Health Goal:', col2, y);
     doc.text('600', col3, y);
-    y += 14;
+    y += 16;
     doc.setTextColor(...diffColor);
     doc.text(diffStr, col3, y);
     doc.setTextColor(0);
