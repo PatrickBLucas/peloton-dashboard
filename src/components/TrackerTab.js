@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 const TARGET_HOURS   = 10;
 const TARGET_MINUTES = TARGET_HOURS * 60;
 
-const RECIPIENT_EMAIL = 'plucas82@gmail.com';
+const RECIPIENT_EMAIL = 'plucas82@gmail.com;patricklucas@ogind.com';
 
 // Dynamically load jsPDF from CDN
 function loadJsPDF() {
